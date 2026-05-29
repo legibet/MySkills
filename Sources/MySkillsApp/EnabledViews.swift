@@ -33,16 +33,16 @@ struct EnabledView: View {
                 )
                 .frame(maxWidth: .infinity, minHeight: 420)
             } else {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 22) {
                     if !globalEnablements.isEmpty {
                         EnabledSectionTitle("Global")
-                        EnablementList(store: store, records: globalEnablements, showsPath: true)
+                        GlobalEnablements(store: store, records: globalEnablements)
                     }
 
                     if !projectSections.isEmpty {
                         EnabledSectionTitle("Projects")
 
-                        VStack(spacing: 18) {
+                        VStack(spacing: 14) {
                             ForEach(projectSections, id: \.0.id) { project, records in
                                 ProjectEnablementGroup(
                                     store: store,
@@ -56,7 +56,7 @@ struct EnabledView: View {
                     }
                 }
                 .padding(24)
-                .frame(maxWidth: 900, alignment: .leading)
+                .frame(maxWidth: 860, alignment: .leading)
             }
         }
         .navigationTitle("Enabled")
@@ -86,19 +86,60 @@ struct EnabledSectionTitle: View {
     }
 }
 
-struct EnablementList: View {
+struct GlobalEnablements: View {
     @Bindable var store: AppStore
     var records: [EnablementRecord]
-    var showsPath: Bool
+
+    private var groups: [GlobalTargetGroup] {
+        GlobalTargetGroup.groups(from: records)
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            ForEach(records) { record in
-                EnablementLine(store: store, record: record, showsPath: showsPath)
-                if record.id != records.last?.id {
-                    Divider()
-                        .padding(.leading, 12)
-                }
+        VStack(spacing: 12) {
+            ForEach(groups) { group in
+                GlobalTargetCard(store: store, group: group)
+            }
+        }
+    }
+}
+
+struct GlobalTargetGroup: Identifiable {
+    var targetID: String
+    var targetName: String
+    var targetPath: String
+    var records: [EnablementRecord]
+
+    var id: String {
+        targetID
+    }
+
+    static func groups(from records: [EnablementRecord]) -> [GlobalTargetGroup] {
+        Dictionary(grouping: records, by: \.targetID)
+            .map { _, records in
+                let sortedRecords = records.sorted { $0.skillName < $1.skillName }
+                let first = sortedRecords[0]
+                return GlobalTargetGroup(
+                    targetID: first.targetID,
+                    targetName: first.targetName,
+                    targetPath: URL(fileURLWithPath: first.targetPath).deletingLastPathComponent().path,
+                    records: sortedRecords,
+                )
+            }
+            .sorted { $0.targetName < $1.targetName }
+    }
+}
+
+struct GlobalTargetCard: View {
+    @Bindable var store: AppStore
+    var group: GlobalTargetGroup
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            EnablementCardHeader(title: group.targetName, subtitle: group.targetPath)
+
+            ForEach(group.records) { record in
+                Divider()
+                EnablementRecordLine(store: store, record: record)
             }
         }
         .background(.regularMaterial)
@@ -115,18 +156,7 @@ struct ProjectEnablementGroup: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(project.name)
-                        .font(.title3.weight(.semibold))
-                    Text(project.path)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                }
-
-                Spacer()
-
+            EnablementCardHeader(title: project.name, subtitle: project.path) {
                 Button {
                     store.openProject(
                         project,
@@ -137,47 +167,135 @@ struct ProjectEnablementGroup: View {
                     Label("Open", systemImage: "folder")
                 }
             }
-            .padding(.bottom, 10)
 
-            ForEach(records) { record in
+            ForEach(EnablementGroup.groups(from: records)) { group in
                 Divider()
-                EnablementLine(store: store, record: record, showsPath: false)
+                ProjectEnablementLine(store: store, group: group)
             }
         }
-        .padding(14)
         .background(.regularMaterial)
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 }
 
-struct EnablementLine: View {
-    @Bindable var store: AppStore
-    var record: EnablementRecord
-    var showsPath: Bool
+struct EnablementCardHeader<Accessory: View>: View {
+    var title: String
+    var subtitle: String
+    @ViewBuilder var accessory: () -> Accessory
+
+    init(
+        title: String,
+        subtitle: String,
+        @ViewBuilder accessory: @escaping () -> Accessory,
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.accessory = accessory
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(record.skillName)
-                        .font(.body.weight(.medium))
-                        .lineLimit(1)
-                    Text(record.targetName)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                if showsPath {
-                    Text(record.targetPath)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .textSelection(.enabled)
-                }
+                Text(title)
+                    .font(.body.weight(.semibold))
+                Text(subtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
             }
 
             Spacer()
 
+            accessory()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+    }
+}
+
+extension EnablementCardHeader where Accessory == EmptyView {
+    init(title: String, subtitle: String) {
+        self.init(title: title, subtitle: subtitle) {
+            EmptyView()
+        }
+    }
+}
+
+struct EnablementGroup: Identifiable {
+    var skillName: String
+    var records: [EnablementRecord]
+
+    var id: String {
+        skillName
+    }
+
+    var targetNames: String {
+        records.map(\.targetName).joined(separator: " · ")
+    }
+
+    static func groups(from records: [EnablementRecord]) -> [EnablementGroup] {
+        Dictionary(grouping: records, by: \.skillName)
+            .map { skillName, records in
+                EnablementGroup(
+                    skillName: skillName,
+                    records: records.sorted { $0.targetName < $1.targetName },
+                )
+            }
+            .sorted { $0.skillName < $1.skillName }
+    }
+}
+
+struct EnablementRecordLine: View {
+    @Bindable var store: AppStore
+    var record: EnablementRecord
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            Text(record.skillName)
+                .font(.body.weight(.medium))
+                .lineLimit(1)
+
+            Spacer()
+
+            DisableEnablementControl(store: store, records: [record])
+        }
+        .padding(.vertical, 8)
+        .padding(.leading, 24)
+        .padding(.trailing, 12)
+    }
+}
+
+struct ProjectEnablementLine: View {
+    @Bindable var store: AppStore
+    var group: EnablementGroup
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            HStack(spacing: 8) {
+                Text(group.skillName)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text(group.targetNames)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            Spacer()
+
+            DisableEnablementControl(store: store, records: group.records)
+        }
+        .padding(.vertical, 8)
+        .padding(.leading, 24)
+        .padding(.trailing, 12)
+    }
+}
+
+struct DisableEnablementControl: View {
+    @Bindable var store: AppStore
+    var records: [EnablementRecord]
+
+    var body: some View {
+        if records.count == 1, let record = records.first {
             Button {
                 store.disable(record)
             } label: {
@@ -187,8 +305,19 @@ struct EnablementLine: View {
             .buttonStyle(.borderless)
             .help("Disable")
             .accessibilityLabel("Disable \(record.skillName)")
+        } else {
+            Menu {
+                ForEach(records) { record in
+                    Button("Disable \(record.targetName)") {
+                        store.disable(record)
+                    }
+                }
+            } label: {
+                Label("Disable", systemImage: "xmark.circle")
+            }
+            .labelStyle(.iconOnly)
+            .help("Disable")
+            .accessibilityLabel("Disable \(records.first?.skillName ?? "skill")")
         }
-        .padding(.vertical, 9)
-        .padding(.horizontal, 12)
     }
 }
