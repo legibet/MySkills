@@ -1,0 +1,11 @@
+/.DS_Store
+/.build/
+/dist/
+/.swiftpm/
+/tmp/
+.vscode/
+.agents/
+.claude/
+.codex/
+skills-lock.json
+CLAUDE.md
