@@ -42,16 +42,6 @@ codesign --verify --deep --strict --verbose=2 dist/MySkills.app
 - `Sources/MySkillsApp/SharedViews.swift`: shared small views.
 - `Resources/Info.plist`: app bundle metadata copied by `make sign`.
 
-## Code Rules
-
-- Keep code simple, direct, and readable.
-- Do not add abstractions unless they remove real duplication or clarify ownership.
-- Long files are acceptable when their responsibility is clear.
-- Prefer native SwiftUI patterns. Use AppKit only for narrow macOS edges such as `NSOpenPanel` and app activation.
-- Keep UI text, code comments, logs, and docs in English.
-- Keep user-facing UI calm and minimal: no decorative clutter, no unnecessary buttons, no explanatory in-app copy.
-- Do not introduce web wrappers or non-native UI.
-
 ## Product Rules
 
 - Do not install skills directly into agent paths. Install/import into `~/.myskills/skills`, then enable by symlink.
