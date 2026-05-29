@@ -48,8 +48,3 @@ codesign --verify --deep --strict --verbose=2 dist/MySkills.app
 - Local folder import copies the folder into `~/.myskills/skills`; it does not create a source symlink.
 - `Discover` uses skills.sh API internally, but UI should present marketplace results as GitHub sources.
 - `Enabled` must keep global enablements separate from project enablements.
-
-## Git
-
-- Do not commit `.build/`, `dist/`, `.codex/`, `.agents/`, `.vscode/`, or local skill lock files.
-- Use focused commits with clear messages.
