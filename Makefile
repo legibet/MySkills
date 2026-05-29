@@ -4,9 +4,11 @@ DIST_DIR := dist
 APP_BUNDLE := $(DIST_DIR)/$(APP_NAME).app
 APP_CONTENTS := $(APP_BUNDLE)/Contents
 APP_MACOS := $(APP_CONTENTS)/MacOS
+APP_RESOURCES := $(APP_CONTENTS)/Resources
 APP_BINARY := $(APP_MACOS)/$(APP_NAME)
 INFO_PLIST := $(APP_CONTENTS)/Info.plist
 SOURCE_INFO_PLIST := Resources/Info.plist
+APP_ICON := Resources/AppIcon.icns
 
 .PHONY: build bundle sign run verify debug logs telemetry clean
 
@@ -15,10 +17,11 @@ build:
 
 bundle: build
 	rm -rf "$(APP_BUNDLE)"
-	mkdir -p "$(APP_MACOS)"
+	mkdir -p "$(APP_MACOS)" "$(APP_RESOURCES)"
 	cp "$$(swift build --show-bin-path)/$(APP_NAME)" "$(APP_BINARY)"
 	chmod +x "$(APP_BINARY)"
 	cp "$(SOURCE_INFO_PLIST)" "$(INFO_PLIST)"
+	cp "$(APP_ICON)" "$(APP_RESOURCES)/AppIcon.icns"
 
 sign: bundle
 	codesign --force --sign - "$(APP_BUNDLE)" >/dev/null
