@@ -186,6 +186,7 @@ struct EnablementLine: View {
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
             .help("Disable")
+            .accessibilityLabel("Disable \(record.skillName)")
         }
         .padding(.vertical, 9)
         .padding(.horizontal, 12)

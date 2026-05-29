@@ -64,6 +64,7 @@ struct SkillListPanel: View {
     var openReader: (SkillRecord) -> Void
 
     @State private var searchText = ""
+    @FocusState private var isListFocused: Bool
 
     private var filteredSkills: [SkillRecord] {
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -100,6 +101,7 @@ struct SkillListPanel: View {
                 }
                 .labelStyle(.iconOnly)
                 .help("Import folder")
+                .accessibilityLabel("Import folder")
 
                 Button {
                     store.load()
@@ -108,6 +110,7 @@ struct SkillListPanel: View {
                 }
                 .labelStyle(.iconOnly)
                 .help("Reload")
+                .accessibilityLabel("Reload library")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
@@ -128,35 +131,85 @@ struct SkillListPanel: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(filteredSkills) { skill in
-                            SkillListRow(
-                                skill: skill,
-                                isSelected: selectedSkillName == skill.name,
-                                select: {
-                                    selectedSkillName = skill.name
-                                },
-                                open: {
-                                    selectedSkillName = skill.name
-                                    openReader(skill)
-                                },
-                            )
-                        }
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 4) {
+                            ForEach(filteredSkills) { skill in
+                                SkillListRow(
+                                    skill: skill,
+                                    isSelected: selectedSkillName == skill.name,
+                                    select: {
+                                        selectedSkillName = skill.name
+                                        isListFocused = true
+                                    },
+                                    open: {
+                                        selectedSkillName = skill.name
+                                        openReader(skill)
+                                    },
+                                )
+                                .id(skill.name)
+                                .contextMenu {
+                                    Button("Read") {
+                                        selectedSkillName = skill.name
+                                        openReader(skill)
+                                    }
+                                }
+                            }
 
-                        if filteredSkills.isEmpty {
-                            EmptyStateView(
-                                title: "No matches",
-                                message: "Try another search.",
-                            )
-                            .padding(.top, 80)
+                            if filteredSkills.isEmpty {
+                                EmptyStateView(
+                                    title: "No matches",
+                                    message: "Try another search.",
+                                )
+                                .padding(.top, 80)
+                            }
                         }
+                        .padding(10)
                     }
-                    .padding(10)
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($isListFocused)
+                    .onKeyPress(.upArrow) {
+                        moveSelection(-1, proxy: proxy)
+                    }
+                    .onKeyPress(.downArrow) {
+                        moveSelection(1, proxy: proxy)
+                    }
+                    .onKeyPress(.return) {
+                        openSelectedSkill()
+                    }
                 }
             }
         }
         .background(.background)
+    }
+
+    private func moveSelection(_ direction: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard !filteredSkills.isEmpty else {
+            return .ignored
+        }
+
+        let currentIndex = filteredSkills.firstIndex { $0.name == selectedSkillName }
+        let nextIndex: Int
+        if let currentIndex {
+            nextIndex = min(max(currentIndex + direction, 0), filteredSkills.count - 1)
+        } else {
+            nextIndex = direction > 0 ? 0 : filteredSkills.count - 1
+        }
+
+        let skill = filteredSkills[nextIndex]
+        selectedSkillName = skill.name
+        proxy.scrollTo(skill.name, anchor: .center)
+        return .handled
+    }
+
+    private func openSelectedSkill() -> KeyPress.Result {
+        guard let skill = filteredSkills.first(where: { $0.name == selectedSkillName }) else {
+            return .ignored
+        }
+
+        openReader(skill)
+        return .handled
     }
 }
 
@@ -376,6 +429,7 @@ struct SkillDetailView: View {
                             }
                             .labelStyle(.iconOnly)
                             .help("Disable")
+                            .accessibilityLabel("Disable \(record.skillName)")
                         }
                         .padding(10)
                         .background(.regularMaterial)
@@ -471,6 +525,8 @@ struct EnableSheet: View {
                 Button("Cancel") {
                     dismiss()
                 }
+                .keyboardShortcut(.cancelAction)
+
                 Button("Enable") {
                     store.enable(
                         skill: skill,

@@ -25,9 +25,9 @@ struct SettingsView: View {
                     .font(.headline)
 
                 Picker("Open folders with", selection: $folderOpenModeRaw) {
-                    Text("Default folder app").tag(FolderOpenMode.defaultFolderApp.rawValue)
+                    Text("Default App").tag(FolderOpenMode.defaultFolderApp.rawValue)
                     Text("Finder").tag(FolderOpenMode.finder.rawValue)
-                    Text("Choose app").tag(FolderOpenMode.selectedApplication.rawValue)
+                    Text("Chosen App").tag(FolderOpenMode.selectedApplication.rawValue)
                 }
                 .pickerStyle(.segmented)
                 .labelsHidden()

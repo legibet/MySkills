@@ -21,6 +21,8 @@ struct MySkillsApp: App {
                     store.load()
                 }
         }
+        .defaultSize(width: 1040, height: 720)
+        .windowToolbarStyle(.unified)
 
         WindowGroup("Skill Reader", id: "reader", for: SkillReaderRequest.self) { $request in
             if let request {
@@ -32,6 +34,7 @@ struct MySkillsApp: App {
             }
         }
         .defaultSize(width: 880, height: 680)
+        .windowToolbarStyle(.unified)
 
         Settings {
             SettingsView()

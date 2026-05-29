@@ -4,6 +4,7 @@ struct DiscoverView: View {
     @Environment(\.openWindow) private var openWindow
     @Bindable var store: AppStore
     @State private var selectedResultID: String?
+    @FocusState private var isListFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,26 +23,90 @@ struct DiscoverView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .padding()
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 4) {
-                        ForEach(store.searchResults) { result in
-                            SearchResultRow(
-                                store: store,
-                                result: result,
-                                isSelected: selectedResultID == result.id,
-                                select: { selectedResultID = result.id },
-                                open: {
-                                    selectedResultID = result.id
-                                    openWindow(id: "reader", value: result.readerRequest)
-                                },
-                            )
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 4) {
+                            ForEach(store.searchResults) { result in
+                                SearchResultRow(
+                                    store: store,
+                                    result: result,
+                                    isSelected: selectedResultID == result.id,
+                                    select: {
+                                        selectedResultID = result.id
+                                        isListFocused = true
+                                    },
+                                    open: {
+                                        selectedResultID = result.id
+                                        openWindow(id: "reader", value: result.readerRequest)
+                                    },
+                                )
+                                .id(result.id)
+                                .contextMenu {
+                                    Button("Read") {
+                                        selectedResultID = result.id
+                                        openWindow(id: "reader", value: result.readerRequest)
+                                    }
+
+                                    if !store.installed(result) {
+                                        Button("Install") {
+                                            Task { await store.install(result) }
+                                        }
+                                    }
+
+                                    if let url = result.sourceWebURL {
+                                        Button("Source") {
+                                            store.openURL(url)
+                                        }
+                                    }
+                                }
+                            }
                         }
+                        .padding(12)
                     }
-                    .padding(12)
+                    .focusable()
+                    .focusEffectDisabled()
+                    .focused($isListFocused)
+                    .onKeyPress(.upArrow) {
+                        moveSelection(-1, proxy: proxy)
+                    }
+                    .onKeyPress(.downArrow) {
+                        moveSelection(1, proxy: proxy)
+                    }
+                    .onKeyPress(.return) {
+                        openSelectedResult()
+                    }
                 }
             }
         }
         .navigationTitle("Discover")
+    }
+
+    private func moveSelection(_ direction: Int, proxy: ScrollViewProxy) -> KeyPress.Result {
+        guard !store.searchResults.isEmpty else {
+            return .ignored
+        }
+
+        let currentIndex = store.searchResults.firstIndex { $0.id == selectedResultID }
+        let nextIndex: Int
+        if let currentIndex {
+            nextIndex = min(max(currentIndex + direction, 0), store.searchResults.count - 1)
+        } else {
+            nextIndex = direction > 0 ? 0 : store.searchResults.count - 1
+        }
+
+        let result = store.searchResults[nextIndex]
+        selectedResultID = result.id
+        proxy.scrollTo(result.id, anchor: .center)
+        return .handled
+    }
+
+    private func openSelectedResult() -> KeyPress.Result {
+        guard let result = store.searchResults.first(where: { $0.id == selectedResultID }) else {
+            return .ignored
+        }
+
+        openWindow(id: "reader", value: result.readerRequest)
+        return .handled
     }
 
     private var toolbar: some View {

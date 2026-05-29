@@ -41,6 +41,7 @@ struct SkillReaderView: View {
         .task(id: request.id) {
             await loadMarkdown()
         }
+        .navigationTitle(request.displayName)
         .sheet(isPresented: $showingEnableSheet) {
             if let installedSkill {
                 EnableSheet(store: store, skill: installedSkill)
