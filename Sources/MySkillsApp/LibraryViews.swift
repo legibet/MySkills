@@ -7,6 +7,7 @@ struct LibraryView: View {
     @AppStorage("folderOpenMode") private var folderOpenModeRaw = FolderOpenMode.defaultFolderApp.rawValue
     @AppStorage("selectedOpenApplicationPath") private var selectedOpenApplicationPath = ""
     @State private var selectedSkillName: String?
+    @State private var skillToRemove: SkillRecord?
 
     private var selectedSkill: SkillRecord? {
         guard let selectedSkillName else {
@@ -24,9 +25,12 @@ struct LibraryView: View {
             SkillListPanel(
                 store: store,
                 selectedSkillName: $selectedSkillName,
+                folderOpenMode: folderOpenMode,
+                selectedOpenApplicationPath: selectedOpenApplicationPath,
                 openReader: { skill in
                     openWindow(id: "reader", value: skill.readerRequest)
                 },
+                requestRemove: { skillToRemove = $0 },
             )
             .frame(width: 320)
 
@@ -39,11 +43,13 @@ struct LibraryView: View {
                         skill: selectedSkill,
                         folderOpenMode: folderOpenMode,
                         selectedOpenApplicationPath: selectedOpenApplicationPath,
+                        requestRemove: { skillToRemove = $0 },
                     )
                 } else {
-                    EmptyStateView(
-                        title: "Select a skill",
-                        message: "Installed skills appear on the left.",
+                    ContentUnavailableView(
+                        "No Skill Selected",
+                        systemImage: "sidebar.left",
+                        description: Text("Select a skill from the list to see its details."),
                     )
                 }
             }
@@ -55,15 +61,36 @@ struct LibraryView: View {
                 selectedSkillName = skills.first?.name
             }
         }
+        .confirmationDialog(
+            skillToRemove.map { "Remove \($0.displayName)?" } ?? "",
+            isPresented: Binding(
+                get: { skillToRemove != nil },
+                set: { if !$0 { skillToRemove = nil } },
+            ),
+            titleVisibility: .visible,
+            presenting: skillToRemove,
+        ) { skill in
+            Button("Remove", role: .destructive) {
+                store.remove(skill)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Enabled symlinks managed by MySkills will be removed too.")
+        }
     }
 }
 
 struct SkillListPanel: View {
     @Bindable var store: AppStore
     @Binding var selectedSkillName: String?
+    var folderOpenMode: FolderOpenMode
+    var selectedOpenApplicationPath: String
     var openReader: (SkillRecord) -> Void
+    var requestRemove: (SkillRecord) -> Void
 
     @State private var searchText = ""
+    @State private var highlighted: String?
+    @State private var detailSyncTask: Task<Void, Never>?
     @FocusState private var isListFocused: Bool
 
     private var filteredSkills: [SkillRecord] {
@@ -118,10 +145,11 @@ struct SkillListPanel: View {
             Divider()
 
             if store.skills.isEmpty {
-                EmptyStateView(
-                    title: "No skills",
-                    message: "Install from Discover or import a local skill folder.",
-                ) {
+                ContentUnavailableView {
+                    Label("No Skills", systemImage: "books.vertical")
+                } description: {
+                    Text("Install from Discover or import a local skill folder.")
+                } actions: {
                     Button {
                         store.importLocalFolder()
                     } label: {
@@ -129,7 +157,6 @@ struct SkillListPanel: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -137,12 +164,16 @@ struct SkillListPanel: View {
                             ForEach(filteredSkills) { skill in
                                 SkillListRow(
                                     skill: skill,
-                                    isSelected: selectedSkillName == skill.name,
+                                    isSelected: highlighted == skill.name,
                                     select: {
+                                        detailSyncTask?.cancel()
+                                        highlighted = skill.name
                                         selectedSkillName = skill.name
                                         isListFocused = true
                                     },
                                     open: {
+                                        detailSyncTask?.cancel()
+                                        highlighted = skill.name
                                         selectedSkillName = skill.name
                                         openReader(skill)
                                     },
@@ -150,18 +181,35 @@ struct SkillListPanel: View {
                                 .id(skill.name)
                                 .contextMenu {
                                     Button("Read") {
+                                        detailSyncTask?.cancel()
+                                        highlighted = skill.name
                                         selectedSkillName = skill.name
                                         openReader(skill)
+                                    }
+                                    Button("Open") {
+                                        store.openSkill(
+                                            skill,
+                                            mode: folderOpenMode,
+                                            applicationPath: selectedOpenApplicationPath,
+                                        )
+                                    }
+                                    if let url = skill.sourceWebURL {
+                                        Button("Source") {
+                                            store.openURL(url)
+                                        }
+                                    }
+
+                                    Divider()
+
+                                    Button("Remove", role: .destructive) {
+                                        requestRemove(skill)
                                     }
                                 }
                             }
 
                             if filteredSkills.isEmpty {
-                                EmptyStateView(
-                                    title: "No matches",
-                                    message: "Try another search.",
-                                )
-                                .padding(.top, 80)
+                                ContentUnavailableView.search(text: searchText)
+                                    .padding(.top, 80)
                             }
                         }
                         .padding(10)
@@ -178,6 +226,14 @@ struct SkillListPanel: View {
                     .onKeyPress(.return) {
                         openSelectedSkill()
                     }
+                    .onChange(of: selectedSkillName) { _, newValue in
+                        if highlighted != newValue {
+                            highlighted = newValue
+                        }
+                    }
+                    .onAppear {
+                        highlighted = selectedSkillName
+                    }
                 }
             }
         }
@@ -189,7 +245,7 @@ struct SkillListPanel: View {
             return .ignored
         }
 
-        let currentIndex = filteredSkills.firstIndex { $0.name == selectedSkillName }
+        let currentIndex = filteredSkills.firstIndex { $0.name == highlighted }
         let nextIndex: Int
         if let currentIndex {
             nextIndex = min(max(currentIndex + direction, 0), filteredSkills.count - 1)
@@ -198,13 +254,26 @@ struct SkillListPanel: View {
         }
 
         let skill = filteredSkills[nextIndex]
-        selectedSkillName = skill.name
+        highlighted = skill.name
         proxy.scrollTo(skill.name, anchor: .center)
+        scheduleDetailSync(skill.name)
         return .handled
     }
 
+    // Update the highlight instantly but debounce the detail pane refresh,
+    // so holding an arrow key scrolls the list smoothly instead of rebuilding
+    // SkillDetailView on every key repeat.
+    private func scheduleDetailSync(_ name: String?) {
+        detailSyncTask?.cancel()
+        detailSyncTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(140))
+            guard !Task.isCancelled else { return }
+            selectedSkillName = name
+        }
+    }
+
     private func openSelectedSkill() -> KeyPress.Result {
-        guard let skill = filteredSkills.first(where: { $0.name == selectedSkillName }) else {
+        guard let skill = filteredSkills.first(where: { $0.name == highlighted }) else {
             return .ignored
         }
 
@@ -237,11 +306,10 @@ struct SkillListRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(rowBackground)
-            .clipShape(RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .selectableRowBackground(isSelected: isSelected, isHovering: isHovering)
         .onHover { isHovering = $0 }
         .simultaneousGesture(TapGesture(count: 2).onEnded {
             open()
@@ -269,18 +337,6 @@ struct SkillListRow: View {
             return "Unknown"
         }
     }
-
-    private var rowBackground: some ShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(Color.accentColor.opacity(0.16))
-        }
-
-        if isHovering {
-            return AnyShapeStyle(Color.primary.opacity(0.06))
-        }
-
-        return AnyShapeStyle(Color.clear)
-    }
 }
 
 struct SkillDetailView: View {
@@ -288,13 +344,13 @@ struct SkillDetailView: View {
     var skill: SkillRecord
     var folderOpenMode: FolderOpenMode
     var selectedOpenApplicationPath: String
+    var requestRemove: (SkillRecord) -> Void
 
     @State private var showingEnableSheet = false
-    @State private var showingRemoveConfirmation = false
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
+            VStack(alignment: .leading, spacing: 20) {
                 header
                 metadata
                 enablements
@@ -305,18 +361,6 @@ struct SkillDetailView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .sheet(isPresented: $showingEnableSheet) {
             EnableSheet(store: store, skill: skill)
-        }
-        .confirmationDialog(
-            "Remove \(skill.displayName)?",
-            isPresented: $showingRemoveConfirmation,
-            titleVisibility: .visible,
-        ) {
-            Button("Remove", role: .destructive) {
-                store.remove(skill)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Enabled symlinks managed by MySkills will be removed too.")
         }
     }
 
@@ -337,6 +381,14 @@ struct SkillDetailView: View {
 
             HStack(spacing: 8) {
                 Button {
+                    showingEnableSheet = true
+                } label: {
+                    Label("Enable", systemImage: "checkmark.circle")
+                }
+                .keyboardShortcut("e", modifiers: [.command])
+                .buttonStyle(.borderedProminent)
+
+                Button {
                     store.openSkill(
                         skill,
                         mode: folderOpenMode,
@@ -348,17 +400,11 @@ struct SkillDetailView: View {
                 .keyboardShortcut("o", modifiers: [.command])
 
                 Button {
-                    showingEnableSheet = true
-                } label: {
-                    Label("Enable", systemImage: "checkmark.circle")
-                }
-                .keyboardShortcut("e", modifiers: [.command])
-
-                Button {
                     Task { await store.requestUpdate(skill) }
                 } label: {
                     Label("Update", systemImage: "arrow.down.circle")
                 }
+                .keyboardShortcut("u", modifiers: [.command])
                 .disabled(!skill.canUpdate)
 
                 Button {
@@ -371,7 +417,7 @@ struct SkillDetailView: View {
                 .disabled(skill.sourceWebURL == nil)
 
                 Button(role: .destructive) {
-                    showingRemoveConfirmation = true
+                    requestRemove(skill)
                 } label: {
                     Label("Remove", systemImage: "trash")
                 }
@@ -431,9 +477,9 @@ struct SkillDetailView: View {
                             .help("Disable")
                             .accessibilityLabel("Disable \(record.skillName)")
                         }
-                        .padding(10)
+                        .padding(12)
                         .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .clipShape(RoundedRectangle(cornerRadius: Metrics.cardCornerRadius))
                     }
                 }
             }

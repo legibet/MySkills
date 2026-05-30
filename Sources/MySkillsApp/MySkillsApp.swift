@@ -23,6 +23,19 @@ struct MySkillsApp: App {
         }
         .defaultSize(width: 1040, height: 720)
         .windowToolbarStyle(.unified)
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Import Folder…") {
+                    store.importLocalFolder()
+                }
+                .keyboardShortcut("i", modifiers: .command)
+
+                Button("Reload") {
+                    store.load()
+                }
+                .keyboardShortcut("r", modifiers: .command)
+            }
+        }
 
         WindowGroup("Skill Reader", id: "reader", for: SkillReaderRequest.self) { $request in
             if let request {

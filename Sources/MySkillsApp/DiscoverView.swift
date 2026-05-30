@@ -6,6 +6,13 @@ struct DiscoverView: View {
     @State private var selectedResultID: String?
     @FocusState private var isListFocused: Bool
 
+    private var queryText: String {
+        let query = store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty
+            ? store.sourceInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            : query
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -16,12 +23,17 @@ struct DiscoverView: View {
                 ProgressView("Searching")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if store.searchResults.isEmpty {
-                EmptyStateView(
-                    title: "Find skills",
-                    message: "Search GitHub skills or browse a Git repository.",
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
+                if queryText.isEmpty {
+                    ContentUnavailableView {
+                        Label("Find Skills", systemImage: "magnifyingglass")
+                    } description: {
+                        Text("Search GitHub skills or browse a Git repository.")
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    ContentUnavailableView.search(text: queryText)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             } else {
                 ScrollViewReader { proxy in
                     ScrollView {
@@ -200,9 +212,8 @@ struct SearchResultRow: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
-        .background(rowBackground)
-        .clipShape(RoundedRectangle(cornerRadius: 7))
         .contentShape(Rectangle())
+        .selectableRowBackground(isSelected: isSelected, isHovering: isHovering)
         .onHover { isHovering = $0 }
     }
 
@@ -217,17 +228,5 @@ struct SearchResultRow: View {
         }
 
         return "GitHub · \(result.source) · \(result.installsText)"
-    }
-
-    private var rowBackground: some ShapeStyle {
-        if isSelected {
-            return AnyShapeStyle(Color.accentColor.opacity(0.14))
-        }
-
-        if isHovering {
-            return AnyShapeStyle(Color.primary.opacity(0.05))
-        }
-
-        return AnyShapeStyle(Color.clear)
     }
 }

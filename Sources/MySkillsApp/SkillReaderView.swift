@@ -20,18 +20,17 @@ struct SkillReaderView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            header
-
-            Divider()
-
+        Group {
             if isLoading {
                 ProgressView("Loading SKILL.md")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if let errorMessage {
-                EmptyStateView(title: "Preview unavailable", message: errorMessage)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .padding()
+                ContentUnavailableView(
+                    "Preview Unavailable",
+                    systemImage: "exclamationmark.triangle",
+                    description: Text(errorMessage),
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
                     MarkdownDocumentView(markdown: markdown)
@@ -42,6 +41,10 @@ struct SkillReaderView: View {
             await loadMarkdown()
         }
         .navigationTitle(request.displayName)
+        .navigationSubtitle(subtitle)
+        .toolbar {
+            toolbarContent
+        }
         .sheet(isPresented: $showingEnableSheet) {
             if let installedSkill {
                 EnableSheet(store: store, skill: installedSkill)
@@ -49,21 +52,9 @@ struct SkillReaderView: View {
         }
     }
 
-    private var header: some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(request.displayName)
-                    .font(.headline)
-                    .lineLimit(1)
-
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
             if let installedSkill {
                 Button {
                     store.openSkill(
@@ -97,8 +88,6 @@ struct SkillReaderView: View {
                 }
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
     }
 
     private var subtitle: String {

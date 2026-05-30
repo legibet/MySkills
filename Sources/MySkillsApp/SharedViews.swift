@@ -1,25 +1,44 @@
 import MarkdownUI
 import SwiftUI
 
-struct EmptyStateView<Actions: View>: View {
-    var title: String
-    var message: String
-    @ViewBuilder var actions: Actions
+/// Shared layout metrics for a consistent 8pt grid.
+enum Metrics {
+    static let rowCornerRadius: CGFloat = 6
+    static let cardCornerRadius: CGFloat = 10
+}
 
-    var body: some View {
-        VStack(alignment: .center, spacing: 10) {
-            Text(title)
-                .font(.headline)
+/// Selection and hover background for the hand-built list rows,
+/// with a subtle transition that respects Reduce Motion.
+private struct SelectableRowBackground: ViewModifier {
+    var isSelected: Bool
+    var isHovering: Bool
 
-            Text(message)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: 280)
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-            actions
-                .padding(.top, 4)
+    func body(content: Content) -> some View {
+        content
+            .background(fill)
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.rowCornerRadius))
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isSelected)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isHovering)
+    }
+
+    private var fill: AnyShapeStyle {
+        if isSelected {
+            return AnyShapeStyle(Color.accentColor.opacity(0.18))
         }
+
+        if isHovering {
+            return AnyShapeStyle(Color.primary.opacity(0.06))
+        }
+
+        return AnyShapeStyle(Color.clear)
+    }
+}
+
+extension View {
+    func selectableRowBackground(isSelected: Bool, isHovering: Bool) -> some View {
+        modifier(SelectableRowBackground(isSelected: isSelected, isHovering: isHovering))
     }
 }
 
@@ -30,17 +49,9 @@ struct MarkdownDocumentView: View {
         Markdown(markdown)
             .markdownTheme(.gitHub)
             .textSelection(.enabled)
-            .padding(.horizontal, 30)
-            .padding(.vertical, 26)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 24)
             .frame(maxWidth: 820, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .center)
-    }
-}
-
-extension EmptyStateView where Actions == EmptyView {
-    init(title: String, message: String) {
-        self.title = title
-        self.message = message
-        actions = EmptyView()
     }
 }

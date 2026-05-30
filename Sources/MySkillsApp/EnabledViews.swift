@@ -27,13 +27,14 @@ struct EnabledView: View {
     var body: some View {
         ScrollView {
             if isEmpty {
-                EmptyStateView(
-                    title: "No enabled skills",
-                    message: "Global and project enablements appear here.",
+                ContentUnavailableView(
+                    "No Enabled Skills",
+                    systemImage: "checkmark.circle",
+                    description: Text("Global and project enablements appear here."),
                 )
                 .frame(maxWidth: .infinity, minHeight: 420)
             } else {
-                VStack(alignment: .leading, spacing: 22) {
+                VStack(alignment: .leading, spacing: 20) {
                     if !globalEnablements.isEmpty {
                         EnabledSectionTitle("Global")
                         GlobalEnablements(store: store, records: globalEnablements)
@@ -42,7 +43,7 @@ struct EnabledView: View {
                     if !projectSections.isEmpty {
                         EnabledSectionTitle("Projects")
 
-                        VStack(spacing: 14) {
+                        VStack(spacing: 12) {
                             ForEach(projectSections, id: \.0.id) { project, records in
                                 ProjectEnablementGroup(
                                     store: store,
@@ -143,7 +144,7 @@ struct GlobalTargetCard: View {
             }
         }
         .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.cardCornerRadius))
     }
 }
 
@@ -174,7 +175,7 @@ struct ProjectEnablementGroup: View {
             }
         }
         .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.cardCornerRadius))
     }
 }
 
