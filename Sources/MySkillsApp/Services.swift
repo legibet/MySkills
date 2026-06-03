@@ -314,8 +314,12 @@ enum SkillLibrary {
 
         var name: String?
         var description: String?
+        var index = 0
 
-        for line in lines {
+        while index < lines.count {
+            let line = lines[index]
+            index += 1
+
             if line == "---" {
                 break
             }
@@ -325,7 +329,11 @@ enum SkillLibrary {
             }
 
             if line.hasPrefix("description:") {
-                description = cleanFrontmatterValue(String(line.dropFirst("description:".count)))
+                description = parseFrontmatterFieldValue(
+                    String(line.dropFirst("description:".count)),
+                    lines: lines,
+                    index: &index,
+                    )
             }
         }
 
@@ -398,6 +406,43 @@ enum SkillLibrary {
         value
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+    }
+
+    private static func parseFrontmatterFieldValue(
+        _ value: String,
+        lines: [String],
+        index: inout Int,
+        ) -> String {
+        let cleaned = cleanFrontmatterValue(value)
+        guard cleaned == ">" || cleaned == "|" else {
+            return cleaned
+        }
+
+        var blockLines: [String] = []
+
+        while index < lines.count {
+            let line = lines[index]
+            if line == "---" || (!line.isEmpty && !line.first!.isWhitespace) {
+                break
+            }
+            blockLines.append(line)
+            index += 1
+        }
+
+        let indent = blockLines
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            .map { $0.prefix { $0.isWhitespace }.count }
+            .min() ?? 0
+        let normalizedLines = blockLines.map { String($0.dropFirst(min(indent, $0.count))) }
+
+        if cleaned == ">" {
+            return normalizedLines
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+
+        return normalizedLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func safeRelativePath(_ path: String) throws -> String {
