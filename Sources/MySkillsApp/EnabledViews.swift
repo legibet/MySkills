@@ -31,7 +31,7 @@ struct EnabledView: View {
                     "No Enabled Skills",
                     systemImage: "checkmark.circle",
                     description: Text("Global and project enablements appear here."),
-                )
+                    )
                 .frame(maxWidth: .infinity, minHeight: 420)
             } else {
                 VStack(alignment: .leading, spacing: 20) {
@@ -51,7 +51,7 @@ struct EnabledView: View {
                                     records: records,
                                     folderOpenMode: folderOpenMode,
                                     selectedOpenApplicationPath: selectedOpenApplicationPath,
-                                )
+                                    )
                             }
                         }
                     }
@@ -124,7 +124,7 @@ struct GlobalTargetGroup: Identifiable {
                     targetName: first.targetName,
                     targetPath: URL(fileURLWithPath: first.targetPath).deletingLastPathComponent().path,
                     records: sortedRecords,
-                )
+                    )
             }
             .sorted { $0.targetName < $1.targetName }
     }
@@ -163,7 +163,7 @@ struct ProjectEnablementGroup: View {
                         project,
                         mode: folderOpenMode,
                         applicationPath: selectedOpenApplicationPath,
-                    )
+                        )
                 } label: {
                     Label("Open", systemImage: "folder")
                 }
@@ -188,7 +188,7 @@ struct EnablementCardHeader<Accessory: View>: View {
         title: String,
         subtitle: String,
         @ViewBuilder accessory: @escaping () -> Accessory,
-    ) {
+        ) {
         self.title = title
         self.subtitle = subtitle
         self.accessory = accessory
@@ -240,7 +240,7 @@ struct EnablementGroup: Identifiable {
                 EnablementGroup(
                     skillName: skillName,
                     records: records.sorted { $0.targetName < $1.targetName },
-                )
+                    )
             }
             .sorted { $0.skillName < $1.skillName }
     }

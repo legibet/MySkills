@@ -19,6 +19,6 @@ let package = Package(
                 .product(name: "MarkdownUI", package: "MarkdownUI")
             ],
             path: "Sources/MySkillsApp",
-        )
+            )
     ],
-)
+    )

@@ -31,7 +31,7 @@ struct LibraryView: View {
                     openWindow(id: "reader", value: skill.readerRequest)
                 },
                 requestRemove: { skillToRemove = $0 },
-            )
+                )
             .frame(width: 320)
 
             Divider()
@@ -44,13 +44,13 @@ struct LibraryView: View {
                         folderOpenMode: folderOpenMode,
                         selectedOpenApplicationPath: selectedOpenApplicationPath,
                         requestRemove: { skillToRemove = $0 },
-                    )
+                        )
                 } else {
                     ContentUnavailableView(
                         "No Skill Selected",
                         systemImage: "sidebar.left",
                         description: Text("Select a skill from the list to see its details."),
-                    )
+                        )
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -66,10 +66,10 @@ struct LibraryView: View {
             isPresented: Binding(
                 get: { skillToRemove != nil },
                 set: { if !$0 { skillToRemove = nil } },
-            ),
+                ),
             titleVisibility: .visible,
             presenting: skillToRemove,
-        ) { skill in
+            ) { skill in
             Button("Remove", role: .destructive) {
                 store.remove(skill)
             }
@@ -177,7 +177,7 @@ struct SkillListPanel: View {
                                         selectedSkillName = skill.name
                                         openReader(skill)
                                     },
-                                )
+                                    )
                                 .id(skill.name)
                                 .contextMenu {
                                     Button("Read") {
@@ -191,7 +191,7 @@ struct SkillListPanel: View {
                                             skill,
                                             mode: folderOpenMode,
                                             applicationPath: selectedOpenApplicationPath,
-                                        )
+                                            )
                                     }
                                     if let url = skill.sourceWebURL {
                                         Button("Source") {
@@ -393,7 +393,7 @@ struct SkillDetailView: View {
                         skill,
                         mode: folderOpenMode,
                         applicationPath: selectedOpenApplicationPath,
-                    )
+                        )
                 } label: {
                     Label("Open", systemImage: "folder")
                 }
@@ -579,7 +579,7 @@ struct EnableSheet: View {
                         scope: scope,
                         targets: selectedTargets,
                         projectURL: projectURL,
-                    )
+                        )
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -647,7 +647,7 @@ struct EnableSheet: View {
             set: { path in
                 projectURL = path.isEmpty ? nil : URL(fileURLWithPath: path)
             },
-        )
+            )
     }
 
     private func binding(for target: AgentTarget) -> Binding<Bool> {
@@ -660,7 +660,7 @@ struct EnableSheet: View {
                     selectedTargetIDs.remove(target.id)
                 }
             },
-        )
+            )
     }
 
     private func pathHint(for target: AgentTarget) -> String {

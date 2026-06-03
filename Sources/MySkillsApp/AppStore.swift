@@ -56,12 +56,12 @@ final class AppStore {
                 let response = try await SkillsSearchClient.download(
                     source: result.source,
                     skillID: result.resolvedSkillID,
-                )
+                    )
                 skill = try SkillLibrary.installDownloadedSkill(
                     result: result,
                     response: response,
                     replacing: false,
-                )
+                    )
 
             case .git:
                 skill = try await Task.detached {
@@ -127,7 +127,7 @@ final class AppStore {
                     scope: scope,
                     target: target,
                     projectURL: scopedProjectURL,
-                )
+                    )
                 created.append(record)
             }
 
@@ -269,13 +269,13 @@ final class AppStore {
                 name: skill.displayName,
                 installs: 0,
                 source: source,
-            )
+                )
             let response = try await SkillsSearchClient.download(source: source, skillID: skillID)
             var updated = try SkillLibrary.installDownloadedSkill(
                 result: result,
                 response: response,
                 replacing: replacingLocalChanges,
-            )
+                )
             updated.installedAt = skill.installedAt
             upsert(updated)
 
@@ -330,8 +330,8 @@ final class AppStore {
                 skills: skills,
                 projects: projects,
                 enablements: enablements,
-            ),
-        )
+                ),
+            )
     }
 
     private func report(_ error: Error) {

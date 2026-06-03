@@ -29,7 +29,7 @@ struct SkillReaderView: View {
                     "Preview Unavailable",
                     systemImage: "exclamationmark.triangle",
                     description: Text(errorMessage),
-                )
+                    )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 ScrollView {
@@ -61,7 +61,7 @@ struct SkillReaderView: View {
                         installedSkill,
                         mode: folderOpenMode,
                         applicationPath: selectedOpenApplicationPath,
-                    )
+                        )
                 } label: {
                     Label("Open", systemImage: "folder")
                 }

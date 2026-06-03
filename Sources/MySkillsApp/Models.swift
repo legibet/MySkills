@@ -92,7 +92,7 @@ struct SkillRecord: Identifiable, Codable, Hashable {
             skillID: skillId,
             installs: nil,
             sourceURL: sourceWebURL?.absoluteString,
-        )
+            )
     }
 
     var sourceWebURL: URL? {
@@ -155,31 +155,31 @@ struct AgentTarget: Identifiable, Hashable {
             name: "Universal",
             projectRelativePath: ".agents/skills",
             globalPath: "~/.agents/skills",
-        ),
+            ),
         AgentTarget(
             id: "claude-code",
             name: "Claude Code",
             projectRelativePath: ".claude/skills",
             globalPath: "~/.claude/skills",
-        ),
+            ),
         AgentTarget(
             id: "codex",
             name: "Codex",
             projectRelativePath: nil,
             globalPath: "~/.codex/skills",
-        ),
+            ),
         AgentTarget(
             id: "opencode",
             name: "OpenCode",
             projectRelativePath: nil,
             globalPath: "~/.config/opencode/skills",
-        ),
+            ),
         AgentTarget(
             id: "cursor",
             name: "Cursor",
             projectRelativePath: nil,
             globalPath: "~/.cursor/skills",
-        )
+            )
     ]
 }
 
@@ -222,7 +222,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
         ref: String? = nil,
         subpath: String? = nil,
         markdown: String? = nil,
-    ) {
+        ) {
         self.id = id
         self.skillId = skillId
         self.name = name
@@ -282,7 +282,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
             ref: ref,
             subpath: subpath,
             markdown: markdown,
-        )
+            )
     }
 
     var sourceWebURL: URL? {
@@ -348,7 +348,7 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
                 name: displayName,
                 installs: installs ?? 0,
                 source: source,
-            )
+                )
 
         case .git:
             guard let gitURL else {
@@ -367,7 +367,7 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
                 ref: ref,
                 subpath: subpath,
                 markdown: markdown,
-            )
+                )
         }
     }
 

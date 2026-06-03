@@ -27,7 +27,7 @@ struct DiscoverView: View {
                     ContentUnavailableView {
                         Label("Find Skills", systemImage: "magnifyingglass")
                     } description: {
-                        Text("Search GitHub skills or browse a Git repository.")
+                        Text("Search skills from skills.sh or browse a Git repository.")
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
@@ -51,7 +51,7 @@ struct DiscoverView: View {
                                         selectedResultID = result.id
                                         openWindow(id: "reader", value: result.readerRequest)
                                     },
-                                )
+                                    )
                                 .id(result.id)
                                 .contextMenu {
                                     Button("Read") {
@@ -124,7 +124,7 @@ struct DiscoverView: View {
     private var toolbar: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                TextField("Search GitHub skills", text: $store.searchQuery)
+                TextField("Search skills from skills.sh", text: $store.searchQuery)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit {
                         Task { await store.search() }

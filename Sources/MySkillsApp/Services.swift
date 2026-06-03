@@ -45,13 +45,13 @@ enum PathResolver {
     }
 
     static func targetDirectory(scope: SkillScope, target: AgentTarget, projectURL: URL?) throws
-        -> URL {
+    -> URL {
         switch scope {
         case .project:
             guard let relativePath = target.projectRelativePath else {
                 throw AppError.message(
                     "\(target.name) does not have a project-specific skills path.",
-                )
+                    )
             }
             guard let projectURL else {
                 throw AppError.message("Choose a project folder first.")
@@ -135,7 +135,7 @@ enum SkillsSearchClient {
             skillID.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? skillID
         let url = URL(
             string: "https://skills.sh/api/download/\(encodedOwner)/\(encodedRepo)/\(encodedSkill)",
-        )!
+            )!
 
         let (data, response) = try await URLSession.shared.data(from: url)
         guard let http = response as? HTTPURLResponse, 200 ..< 300 ~= http.statusCode else {
@@ -159,7 +159,7 @@ enum SkillLibrary {
         try FileManager.default.createDirectory(
             at: PathResolver.skillsDirectory,
             withIntermediateDirectories: true,
-        )
+            )
     }
 
     static func scan(knownSkills: [SkillRecord]) throws -> [SkillRecord] {
@@ -174,7 +174,7 @@ enum SkillLibrary {
             at: PathResolver.skillsDirectory,
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles],
-        )
+            )
 
         return entries.compactMap { url in
             guard isDirectoryOrSymlink(url) else {
@@ -190,12 +190,12 @@ enum SkillLibrary {
             let metadata = parseSkillMetadata(at: skillFile)
             var record =
                 known[skillName]
-                    ?? SkillRecord(
-                        name: skillName,
-                        displayName: metadata.name ?? skillName,
-                        description: metadata.description ?? "",
-                        sourceKind: .unknown,
-                        installedAt: Date(),
+                ?? SkillRecord(
+                    name: skillName,
+                    displayName: metadata.name ?? skillName,
+                    description: metadata.description ?? "",
+                    sourceKind: .unknown,
+                    installedAt: Date(),
                     )
 
             record.displayName = metadata.name ?? record.displayName
@@ -211,7 +211,7 @@ enum SkillLibrary {
         result: SkillSearchResult,
         response: SkillsSearchClient.DownloadResponse,
         replacing: Bool,
-    ) throws -> SkillRecord {
+        ) throws -> SkillRecord {
         let name = sanitizeSkillName(result.resolvedSkillID)
         let destination = PathResolver.skillURL(name)
 
@@ -230,7 +230,7 @@ enum SkillLibrary {
             importedHash: hash,
             installedAt: Date(),
             updatedAt: Date(),
-        )
+            )
     }
 
     static func importLocalFolder(_ folder: URL) throws -> SkillRecord {
@@ -253,7 +253,7 @@ enum SkillLibrary {
             sourceKind: .local,
             sourceInput: folder.path,
             installedAt: Date(),
-        )
+            )
     }
 
     static func removeSkill(_ skill: SkillRecord) throws {
@@ -272,14 +272,14 @@ enum SkillLibrary {
         from source: URL,
         to destination: URL,
         replacing: Bool,
-    ) throws {
+        ) throws {
         if FileManager.default.fileExists(atPath: destination.path) || isSymlink(destination) {
             if replacing {
                 try FileManager.default.removeItem(at: destination)
             } else {
                 throw AppError.message(
                     "A skill named \(destination.lastPathComponent) already exists.",
-                )
+                    )
             }
         }
 
@@ -297,7 +297,7 @@ enum SkillLibrary {
             of: "-+",
             with: "-",
             options: .regularExpression,
-        )
+            )
         return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
@@ -344,14 +344,14 @@ enum SkillLibrary {
         _ files: [SkillsSearchClient.DownloadedFile],
         to destination: URL,
         replacing: Bool,
-    ) throws {
+        ) throws {
         if FileManager.default.fileExists(atPath: destination.path) || isSymlink(destination) {
             if replacing {
                 try FileManager.default.removeItem(at: destination)
             } else {
                 throw AppError.message(
                     "A skill named \(destination.lastPathComponent) already exists.",
-                )
+                    )
             }
         }
 
@@ -363,7 +363,7 @@ enum SkillLibrary {
             try FileManager.default.createDirectory(
                 at: fileURL.deletingLastPathComponent(),
                 withIntermediateDirectories: true,
-            )
+                )
             try Data(file.contents.utf8).write(to: fileURL)
         }
     }
@@ -373,7 +373,7 @@ enum SkillLibrary {
             at: source,
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles],
-        )
+            )
 
         for entry in entries where entry.lastPathComponent != ".git" {
             let target = destination.appendingPathComponent(entry.lastPathComponent)
@@ -382,7 +382,7 @@ enum SkillLibrary {
             if values.isDirectory == true, values.isSymbolicLink != true {
                 try FileManager.default.createDirectory(
                     at: target, withIntermediateDirectories: true,
-                )
+                    )
                 try copyContents(from: entry, to: target)
             } else {
                 try FileManager.default.copyItem(at: entry, to: target)
@@ -487,7 +487,7 @@ enum FolderHash {
             at: folder,
             includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
             options: [.skipsHiddenFiles],
-        )
+            )
         .filter { $0.lastPathComponent != ".git" }
         .sorted { $0.path < $1.path }
 
@@ -512,7 +512,7 @@ enum FolderHash {
 enum ProcessRunner {
     @discardableResult
     static func run(_ executable: String, _ arguments: [String], workingDirectory: URL? = nil)
-        throws -> String {
+    throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
         process.arguments = [executable] + arguments
@@ -590,7 +590,7 @@ enum GitInstaller {
                 ref: parsed.ref,
                 subpath: relativePath,
                 markdown: MarkdownCleaner.stripFrontmatter(markdown),
-            )
+                )
         }
     }
 
@@ -605,7 +605,7 @@ enum GitInstaller {
             ref: result.ref,
             subpath: nil,
             skillFilter: nil,
-        )
+            )
         let cloneURL = try clone(parsed)
         defer {
             try? FileManager.default.removeItem(at: cloneURL)
@@ -622,7 +622,7 @@ enum GitInstaller {
         let metadata = SkillLibrary.parseSkillMetadata(at: skillFile)
         let name = SkillLibrary.sanitizeSkillName(
             result.skillId ?? metadata.name ?? folder.lastPathComponent,
-        )
+            )
         let destination = PathResolver.skillURL(name)
 
         try SkillLibrary.copySkillDirectory(from: folder, to: destination, replacing: replacing)
@@ -640,11 +640,11 @@ enum GitInstaller {
             importedHash: hash,
             installedAt: Date(),
             updatedAt: Date(),
-        )
+            )
     }
 
     static func install(_ input: String, replacing: Bool, wantedName: String? = nil) throws
-        -> [SkillRecord] {
+    -> [SkillRecord] {
         let parsed = try parse(input)
         let cloneURL = try clone(parsed)
         defer {
@@ -661,7 +661,7 @@ enum GitInstaller {
             skillFolders,
             parsed: parsed,
             wantedName: wantedName,
-        )
+            )
 
         guard !selectedFolders.isEmpty else {
             throw AppError.message("No matching skill was found in this source.")
@@ -670,10 +670,10 @@ enum GitInstaller {
         return try selectedFolders.map { folder in
             let metadata = SkillLibrary.parseSkillMetadata(
                 at: folder.appendingPathComponent("SKILL.md"),
-            )
+                )
             let name = SkillLibrary.sanitizeSkillName(
                 wantedName ?? metadata.name ?? folder.lastPathComponent,
-            )
+                )
             let destination = PathResolver.skillURL(name)
 
             try SkillLibrary.copySkillDirectory(from: folder, to: destination, replacing: replacing)
@@ -691,7 +691,7 @@ enum GitInstaller {
                 importedHash: hash,
                 installedAt: Date(),
                 updatedAt: Date(),
-            )
+                )
         }
     }
 
@@ -735,7 +735,7 @@ enum GitInstaller {
                 gitURL: text,
                 ref: ref,
                 skillFilter: skillFilter,
-            )
+                )
         }
 
         let parts = text.split(separator: "/").map(String.init)
@@ -753,7 +753,7 @@ enum GitInstaller {
             ref: ref,
             subpath: subpath,
             skillFilter: skillFilter,
-        )
+            )
     }
 
     private static func parseGitHubURL(
@@ -761,7 +761,7 @@ enum GitInstaller {
         ref: String?,
         skillFilter: String?,
         input: String,
-    ) -> ParsedGitSource? {
+        ) -> ParsedGitSource? {
         guard let url = URL(string: text), url.host == "github.com" else {
             return nil
         }
@@ -783,7 +783,7 @@ enum GitInstaller {
                 ref: treeRef,
                 subpath: subpath,
                 skillFilter: skillFilter,
-            )
+                )
         }
 
         return ParsedGitSource(
@@ -791,7 +791,7 @@ enum GitInstaller {
             gitURL: "https://github.com/\(owner)/\(repo).git",
             ref: ref,
             skillFilter: skillFilter,
-        )
+            )
     }
 
     private static func parseGitLabURL(
@@ -799,7 +799,7 @@ enum GitInstaller {
         ref: String?,
         skillFilter: String?,
         input: String,
-    ) -> ParsedGitSource? {
+        ) -> ParsedGitSource? {
         guard let url = URL(string: text), url.host == "gitlab.com" else {
             return nil
         }
@@ -817,12 +817,12 @@ enum GitInstaller {
                 gitURL: "https://gitlab.com/\(repoPath).git",
                 ref: ref,
                 skillFilter: skillFilter,
-            )
+                )
         }
 
         let repoPath = parts[..<marker].joined(separator: "/").replacingOccurrences(
             of: ".git", with: "",
-        )
+            )
         let treeRef = ref ?? parts[marker + 2]
         let subpath =
             parts.count > marker + 3 ? parts.dropFirst(marker + 3).joined(separator: "/") : nil
@@ -833,7 +833,7 @@ enum GitInstaller {
             ref: treeRef,
             subpath: subpath,
             skillFilter: skillFilter,
-        )
+            )
     }
 
     private static func clone(_ parsed: ParsedGitSource) throws -> URL {
@@ -853,7 +853,7 @@ enum GitInstaller {
         _ folders: [URL],
         parsed: ParsedGitSource,
         wantedName: String?,
-    ) -> [URL] {
+        ) -> [URL] {
         folders.filter { folder in
             guard let filter = wantedName ?? parsed.skillFilter else {
                 return true
@@ -861,7 +861,7 @@ enum GitInstaller {
 
             let metadata = SkillLibrary.parseSkillMetadata(
                 at: folder.appendingPathComponent("SKILL.md"),
-            )
+                )
             let folderName = SkillLibrary.sanitizeSkillName(folder.lastPathComponent)
             let metadataName = metadata.name.map(SkillLibrary.sanitizeSkillName)
             let cleanFilter = SkillLibrary.sanitizeSkillName(filter)
@@ -894,7 +894,7 @@ enum GitInstaller {
                 at: root,
                 includingPropertiesForKeys: [.isDirectoryKey],
                 options: [.skipsHiddenFiles],
-            )
+                )
         else {
             return []
         }
@@ -918,11 +918,11 @@ enum GitInstaller {
 
 enum SymlinkService {
     static func enable(skill: SkillRecord, scope: SkillScope, target: AgentTarget, projectURL: URL?)
-        throws -> EnablementRecord {
+    throws -> EnablementRecord {
         let source = PathResolver.skillURL(skill.name)
         let directory = try PathResolver.targetDirectory(
             scope: scope, target: target, projectURL: projectURL,
-        )
+            )
         let destination = directory.appendingPathComponent(skill.name)
 
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -932,7 +932,7 @@ enum SymlinkService {
                 return makeRecord(
                     skill: skill, scope: scope, target: target, projectURL: projectURL,
                     destination: destination,
-                )
+                    )
             }
             throw AppError.message("\(destination.path) already exists.")
         }
@@ -941,7 +941,7 @@ enum SymlinkService {
         return makeRecord(
             skill: skill, scope: scope, target: target, projectURL: projectURL,
             destination: destination,
-        )
+            )
     }
 
     static func disable(_ enablement: EnablementRecord) throws {
@@ -974,7 +974,7 @@ enum SymlinkService {
         target: AgentTarget,
         projectURL: URL?,
         destination: URL,
-    ) -> EnablementRecord {
+        ) -> EnablementRecord {
         EnablementRecord(
             skillName: skill.name,
             scope: scope,
@@ -983,7 +983,7 @@ enum SymlinkService {
             projectPath: projectURL?.path,
             targetPath: destination.path,
             createdAt: Date(),
-        )
+            )
     }
 
     private static func isSymlink(_ url: URL) -> Bool {
@@ -998,7 +998,7 @@ enum SymlinkService {
         let rawTarget = try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
         let targetURL = URL(
             fileURLWithPath: rawTarget, relativeTo: link.deletingLastPathComponent(),
-        )
+            )
         .standardizedFileURL
         return targetURL.path == source.standardizedFileURL.path
     }

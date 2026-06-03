@@ -40,7 +40,7 @@ struct ContentView: View {
             "This skill has local changes. Updating will replace them.",
             isPresented: pendingUpdateBinding,
             titleVisibility: .visible,
-        ) {
+            ) {
             Button("Replace") {
                 Task { await store.replacePendingUpdate() }
             }
@@ -74,13 +74,13 @@ struct ContentView: View {
         Binding(
             get: { store.errorMessage != nil },
             set: { if !$0 { store.errorMessage = nil } },
-        )
+            )
     }
 
     private var pendingUpdateBinding: Binding<Bool> {
         Binding(
             get: { store.pendingUpdate != nil },
             set: { if !$0 { store.pendingUpdate = nil } },
-        )
+            )
     }
 }
