@@ -10,63 +10,41 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Folders")
-                    .font(.title3.weight(.semibold))
-
-                Text("Choose what the Open button uses for folders.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Open folders with")
-                    .font(.headline)
-
+        Form {
+            Section {
                 Picker("Open folders with", selection: $folderOpenModeRaw) {
                     Text("Default App").tag(FolderOpenMode.defaultFolderApp.rawValue)
                     Text("Finder").tag(FolderOpenMode.finder.rawValue)
                     Text("Chosen App").tag(FolderOpenMode.selectedApplication.rawValue)
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .frame(width: 360)
 
-                Text(modeDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(minHeight: 32, alignment: .topLeading)
-            }
+                LabeledContent("Application") {
+                    HStack(spacing: 8) {
+                        if folderOpenMode == .selectedApplication {
+                            Text(selectedApplicationName)
+                                .foregroundStyle(.secondary)
+                        }
 
-            if folderOpenMode == .selectedApplication {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Selected app")
-                            .font(.headline)
-                        Text(selectedApplicationName)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button("Choose...") {
-                        chooseApplication()
+                        Button("Choose…") {
+                            chooseApplication()
+                        }
                     }
                 }
+                .disabled(folderOpenMode != .selectedApplication)
+            } header: {
+                Text("Folders")
+            } footer: {
+                Text(modeDescription)
             }
-
-            Spacer()
         }
-        .padding(24)
-        .frame(width: 520, height: 260)
+        .formStyle(.grouped)
+        .frame(width: 480, height: 260)
     }
 
     private var modeDescription: String {
         switch folderOpenMode {
         case .defaultFolderApp:
-            "Uses macOS' current default app for folders. This also respects third-party file managers."
+            "Uses macOS' current default app for folders."
         case .finder:
             "Always opens folders in Finder."
         case .selectedApplication:
