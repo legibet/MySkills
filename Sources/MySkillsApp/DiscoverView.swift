@@ -218,15 +218,14 @@ struct SearchResultRow: View {
     }
 
     private var subtitle: String {
-        if result.sourceKind == .git {
-            let service = result.gitURL.map(SourceURL.serviceLabel) ?? "Git"
+        if result.searchSource == .git {
             let repository = result.gitURL.map(SourceURL.repositoryLabel) ?? result.source
             if let subpath = result.subpath, !subpath.isEmpty {
-                return "\(service) · \(repository) · \(subpath)"
+                return "\(repository)/\(subpath)"
             }
-            return "\(service) · \(repository)"
+            return repository
         }
 
-        return "GitHub · \(result.source) · \(result.installsText)"
+        return "\(result.source)/\(result.resolvedSkillID)"
     }
 }

@@ -27,10 +27,14 @@ enum MainSection: String, CaseIterable, Identifiable, Codable {
 }
 
 enum SourceKind: String, Codable {
-    case marketplace
+    case skillsSh
     case git
     case local
-    case unknown
+}
+
+enum SearchSource: String, Codable, Hashable {
+    case skillsSh
+    case git
 }
 
 enum SkillScope: String, Codable, CaseIterable, Identifiable {
@@ -79,7 +83,7 @@ struct SkillRecord: Identifiable, Codable, Hashable {
     var updatedAt: Date?
 
     var canUpdate: Bool {
-        sourceKind == .marketplace || sourceKind == .git
+        sourceKind != .local
     }
 
     var readerRequest: SkillReaderRequest {
@@ -87,24 +91,41 @@ struct SkillRecord: Identifiable, Codable, Hashable {
             kind: .library,
             name: name,
             displayName: displayName,
-            description: description,
-            source: source,
-            skillID: skillId,
-            installs: nil,
-            sourceURL: sourceWebURL?.absoluteString,
             )
     }
 
     var sourceWebURL: URL? {
-        if let source, source.split(separator: "/").count == 2 {
+        switch sourceKind {
+        case .skillsSh:
+            guard let source else {
+                return nil
+            }
             return URL(string: "https://github.com/\(source)")
-        }
-
-        guard let gitURL else {
+        case .git:
+            guard let gitURL else {
+                return nil
+            }
+            return SourceURL.webURL(from: gitURL, ref: ref, subpath: subpath)
+        case .local:
             return nil
         }
+    }
 
-        return SourceURL.webURL(from: gitURL, ref: ref, subpath: subpath)
+    var sourceDisplayName: String {
+        switch sourceKind {
+        case .skillsSh:
+            return [source, skillId].compactMap { $0 }.joined(separator: "/")
+        case .git:
+            guard let gitURL else {
+                return "Local"
+            }
+            return [SourceURL.repositoryLabel(from: gitURL), subpath]
+                .compactMap { $0 }
+                .filter { !$0.isEmpty }
+                .joined(separator: "/")
+        case .local:
+            return "Local"
+        }
     }
 }
 
@@ -189,7 +210,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
     var name: String
     var installs: Int
     var source: String
-    var sourceKind: SourceKind = .marketplace
+    var searchSource: SearchSource = .skillsSh
     var sourceInput: String?
     var gitURL: String?
     var ref: String?
@@ -202,7 +223,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
         case name
         case installs
         case source
-        case sourceKind
+        case searchSource
         case sourceInput
         case gitURL
         case ref
@@ -216,7 +237,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
         name: String,
         installs: Int,
         source: String,
-        sourceKind: SourceKind = .marketplace,
+        searchSource: SearchSource = .skillsSh,
         sourceInput: String? = nil,
         gitURL: String? = nil,
         ref: String? = nil,
@@ -228,7 +249,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
         self.name = name
         self.installs = installs
         self.source = source
-        self.sourceKind = sourceKind
+        self.searchSource = searchSource
         self.sourceInput = sourceInput
         self.gitURL = gitURL
         self.ref = ref
@@ -243,7 +264,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
         name = try container.decode(String.self, forKey: .name)
         installs = try container.decodeIfPresent(Int.self, forKey: .installs) ?? 0
         source = try container.decode(String.self, forKey: .source)
-        sourceKind = try container.decodeIfPresent(SourceKind.self, forKey: .sourceKind) ?? .marketplace
+        searchSource = try container.decodeIfPresent(SearchSource.self, forKey: .searchSource) ?? .skillsSh
         sourceInput = try container.decodeIfPresent(String.self, forKey: .sourceInput)
         gitURL = try container.decodeIfPresent(String.self, forKey: .gitURL)
         ref = try container.decodeIfPresent(String.self, forKey: .ref)
@@ -255,28 +276,13 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
         skillId ?? id.split(separator: "/").last.map(String.init) ?? name
     }
 
-    var installsText: String {
-        if installs >= 1_000_000 {
-            return String(format: "%.1fM installs", Double(installs) / 1_000_000)
-        }
-
-        if installs >= 1000 {
-            return String(format: "%.1fK installs", Double(installs) / 1000)
-        }
-
-        return installs == 1 ? "1 install" : "\(installs) installs"
-    }
-
     var readerRequest: SkillReaderRequest {
         SkillReaderRequest(
-            kind: sourceKind == .git ? .git : .marketplace,
+            kind: searchSource == .git ? .git : .skillsSh,
             name: resolvedSkillID,
             displayName: name,
-            description: "",
             source: source,
             skillID: resolvedSkillID,
-            installs: installs,
-            sourceURL: sourceWebURL?.absoluteString,
             sourceInput: sourceInput,
             gitURL: gitURL,
             ref: ref,
@@ -286,7 +292,7 @@ struct SkillSearchResult: Identifiable, Decodable, Hashable {
     }
 
     var sourceWebURL: URL? {
-        if sourceKind == .git, let gitURL {
+        if searchSource == .git, let gitURL {
             return SourceURL.webURL(from: gitURL, ref: ref, subpath: subpath)
         }
 
@@ -302,7 +308,7 @@ struct StoredState: Codable {
 
 enum SkillReaderKind: String, Codable {
     case library
-    case marketplace
+    case skillsSh
     case git
 }
 
@@ -310,11 +316,8 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
     var kind: SkillReaderKind
     var name: String
     var displayName: String
-    var description: String
     var source: String?
     var skillID: String?
-    var installs: Int?
-    var sourceURL: String?
     var sourceInput: String?
     var gitURL: String?
     var ref: String?
@@ -325,8 +328,8 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
         switch kind {
         case .library:
             "library:\(name)"
-        case .marketplace:
-            "marketplace:\(source ?? ""):\(skillID ?? name)"
+        case .skillsSh:
+            "skillsSh:\(source ?? ""):\(skillID ?? name)"
         case .git:
             "git:\(gitURL ?? source ?? ""):\(subpath ?? skillID ?? name)"
         }
@@ -337,7 +340,7 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
         case .library:
             return nil
 
-        case .marketplace:
+        case .skillsSh:
             guard let source else {
                 return nil
             }
@@ -346,7 +349,7 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
                 id: "\(source)/\(skillID ?? name)",
                 skillId: skillID ?? name,
                 name: displayName,
-                installs: installs ?? 0,
+                installs: 0,
                 source: source,
                 )
 
@@ -359,9 +362,9 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
                 id: id,
                 skillId: skillID ?? name,
                 name: displayName,
-                installs: installs ?? 0,
+                installs: 0,
                 source: source ?? gitURL,
-                sourceKind: .git,
+                searchSource: .git,
                 sourceInput: sourceInput,
                 gitURL: gitURL,
                 ref: ref,
@@ -372,10 +375,6 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
     }
 
     var sourceWebURL: URL? {
-        if let sourceURL {
-            return URL(string: sourceURL)
-        }
-
         if kind == .git, let gitURL {
             return SourceURL.webURL(from: gitURL, ref: ref, subpath: subpath)
         }
@@ -388,18 +387,6 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
 }
 
 enum SourceURL {
-    static func serviceLabel(from gitURL: String) -> String {
-        if gitURL.contains("github.com") {
-            return "GitHub"
-        }
-
-        if gitURL.contains("gitlab.com") {
-            return "GitLab"
-        }
-
-        return "Git"
-    }
-
     static func repositoryLabel(from gitURL: String) -> String {
         if gitURL.hasPrefix("git@github.com:") {
             return gitURL

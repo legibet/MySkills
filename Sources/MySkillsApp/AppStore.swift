@@ -51,8 +51,8 @@ final class AppStore {
 
         do {
             let skill: SkillRecord
-            switch result.sourceKind {
-            case .marketplace:
+            switch result.searchSource {
+            case .skillsSh:
                 let response = try await SkillsSearchClient.download(
                     source: result.source,
                     skillID: result.resolvedSkillID,
@@ -67,9 +67,6 @@ final class AppStore {
                 skill = try await Task.detached {
                     try GitInstaller.install(result, replacing: false)
                 }.value
-
-            default:
-                throw AppError.message("This search result cannot be installed.")
             }
 
             upsert(skill)
@@ -258,11 +255,10 @@ final class AppStore {
 
     private func update(_ skill: SkillRecord, replacingLocalChanges: Bool) async throws {
         switch skill.sourceKind {
-        case .marketplace:
+        case .skillsSh:
             guard let source = skill.source, let skillID = skill.skillId else {
-                throw AppError.message("This GitHub skill is missing source metadata.")
+                throw AppError.message("This skill is missing source metadata.")
             }
-
             let result = SkillSearchResult(
                 id: "\(source)/\(skillID)",
                 skillId: skillID,
@@ -281,9 +277,8 @@ final class AppStore {
 
         case .git:
             guard let input = skill.sourceInput else {
-                throw AppError.message("This Git skill is missing source metadata.")
+                throw AppError.message("This skill is missing source metadata.")
             }
-
             let installed = try await Task.detached {
                 try GitInstaller.install(input, replacing: replacingLocalChanges, wantedName: skill.name)
             }.value
@@ -293,7 +288,7 @@ final class AppStore {
             updated.installedAt = skill.installedAt
             upsert(updated)
 
-        default:
+        case .local:
             throw AppError.message("This skill cannot be updated automatically.")
         }
 

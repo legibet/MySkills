@@ -80,7 +80,7 @@ struct SkillReaderView: View {
                 .disabled(store.installed(result) || store.isInstalling)
             }
 
-            if let url = request.sourceWebURL {
+            if let url = installedSkill?.sourceWebURL ?? request.sourceWebURL {
                 Button {
                     store.openURL(url)
                 } label: {
@@ -94,29 +94,17 @@ struct SkillReaderView: View {
         switch request.kind {
         case .library:
             return installedSkill.map { PathResolver.skillURL($0.name).path } ?? "Installed skill"
-        case .marketplace:
-            if let source = request.source, let installs = request.installs {
-                return "GitHub · \(source) · \(formatInstalls(installs))"
+        case .skillsSh:
+            if let source = request.source {
+                return "\(source)/\(request.skillID ?? request.name)"
             }
-            return request.source ?? "GitHub skill"
+            return request.source ?? "Skill"
         case .git:
             if let source = request.source, let subpath = request.subpath, !subpath.isEmpty {
-                return "\(source) · \(subpath)"
+                return "\(source)/\(subpath)"
             }
-            return request.source ?? "Git source"
+            return request.source ?? "Skill"
         }
-    }
-
-    private func formatInstalls(_ installs: Int) -> String {
-        if installs >= 1_000_000 {
-            return String(format: "%.1fM installs", Double(installs) / 1_000_000)
-        }
-
-        if installs >= 1000 {
-            return String(format: "%.1fK installs", Double(installs) / 1000)
-        }
-
-        return installs == 1 ? "1 install" : "\(installs) installs"
     }
 
     @MainActor
@@ -130,7 +118,7 @@ struct SkillReaderView: View {
             case .library:
                 markdown = try SkillLibrary.skillMarkdown(request.name)
 
-            case .marketplace:
+            case .skillsSh:
                 guard let source = request.source, let skillID = request.skillID else {
                     throw AppError.message("This GitHub result is missing source metadata.")
                 }

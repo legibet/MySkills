@@ -194,7 +194,7 @@ enum SkillLibrary {
                     name: skillName,
                     displayName: metadata.name ?? skillName,
                     description: metadata.description ?? "",
-                    sourceKind: .unknown,
+                    sourceKind: .local,
                     installedAt: Date(),
                     )
 
@@ -223,10 +223,9 @@ enum SkillLibrary {
             name: name,
             displayName: metadata.name ?? result.name,
             description: metadata.description ?? "",
-            sourceKind: .marketplace,
+            sourceKind: .skillsSh,
             source: result.source,
             skillId: result.resolvedSkillID,
-            sourceInput: "\(result.source)@\(result.resolvedSkillID)",
             importedHash: hash,
             installedAt: Date(),
             updatedAt: Date(),
@@ -251,7 +250,6 @@ enum SkillLibrary {
             displayName: metadata.name ?? name,
             description: metadata.description ?? "",
             sourceKind: .local,
-            sourceInput: folder.path,
             installedAt: Date(),
             )
     }
@@ -584,7 +582,7 @@ enum GitInstaller {
                 name: metadata.name ?? folder.lastPathComponent,
                 installs: 0,
                 source: SourceURL.repositoryLabel(from: parsed.gitURL),
-                sourceKind: .git,
+                searchSource: .git,
                 sourceInput: parsed.input,
                 gitURL: parsed.gitURL,
                 ref: parsed.ref,
@@ -595,7 +593,7 @@ enum GitInstaller {
     }
 
     static func install(_ result: SkillSearchResult, replacing: Bool) throws -> SkillRecord {
-        guard result.sourceKind == .git, let gitURL = result.gitURL else {
+        guard result.searchSource == .git, let gitURL = result.gitURL else {
             throw AppError.message("This result is missing Git source metadata.")
         }
 

@@ -103,9 +103,7 @@ struct SkillListPanel: View {
             let values = [
                 skill.displayName,
                 skill.name,
-                skill.source ?? "",
-                skill.sourceInput ?? "",
-                skill.gitURL ?? ""
+                skill.sourceDisplayName
             ]
             return values.contains {
                 $0.localizedCaseInsensitiveContains(query)
@@ -317,25 +315,7 @@ struct SkillListRow: View {
     }
 
     private var subtitle: String {
-        switch skill.sourceKind {
-        case .marketplace:
-            if let source = skill.source {
-                return "GitHub · \(source)"
-            }
-            return "GitHub"
-
-        case .git:
-            guard let gitURL = skill.gitURL else {
-                return "Git"
-            }
-            return "\(SourceURL.serviceLabel(from: gitURL)) · \(SourceURL.repositoryLabel(from: gitURL))"
-
-        case .local:
-            return "Local"
-
-        case .unknown:
-            return "Unknown"
-        }
+        skill.sourceDisplayName
     }
 }
 
@@ -487,19 +467,7 @@ struct SkillDetailView: View {
     }
 
     private var sourceText: String {
-        switch skill.sourceKind {
-        case .marketplace:
-            if let source = skill.source {
-                return "GitHub · \(source)"
-            }
-            return "GitHub"
-        case .git:
-            return skill.sourceInput ?? skill.gitURL ?? "Git"
-        case .local:
-            return "Local"
-        case .unknown:
-            return "Unknown"
-        }
+        skill.sourceDisplayName
     }
 }
 
