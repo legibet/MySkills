@@ -50,7 +50,7 @@ struct MySkillsApp: App {
         .windowToolbarStyle(.unified)
 
         Settings {
-            SettingsView()
+            SettingsView(store: store)
         }
     }
 }

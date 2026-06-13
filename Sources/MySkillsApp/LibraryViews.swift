@@ -500,7 +500,7 @@ struct EnableSheet: View {
     @State private var selectedTargetIDs: Set<String> = ["universal"]
 
     private var availableTargets: [AgentTarget] {
-        AgentTarget.all.filter { target in
+        store.targets.filter { target in
             scope == .project ? target.supportsProject : target.supportsGlobal
         }
     }

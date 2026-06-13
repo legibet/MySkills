@@ -8,6 +8,7 @@ final class AppStore {
     var skills: [SkillRecord] = []
     var projects: [ProjectRecord] = []
     var enablements: [EnablementRecord] = []
+    var customTargets: [AgentTarget] = []
     var searchQuery = ""
     var searchResults: [SkillSearchResult] = []
     var sourceInput = ""
@@ -16,12 +17,17 @@ final class AppStore {
     var isInstalling = false
     var pendingUpdate: SkillRecord?
 
+    var targets: [AgentTarget] {
+        AgentTarget.builtins + customTargets
+    }
+
     func load() {
         do {
             let state = StateFile.load()
             skills = try SkillLibrary.scan(knownSkills: state.skills)
             projects = state.projects.sorted { $0.lastUsedAt > $1.lastUsedAt }
             enablements = SymlinkService.validEnablements(state.enablements)
+            customTargets = state.customTargets
             try save()
         } catch {
             report(error)
@@ -146,6 +152,25 @@ final class AppStore {
         do {
             try SymlinkService.disable(enablement)
             enablements.removeAll { $0.id == enablement.id }
+            try save()
+        } catch {
+            report(error)
+        }
+    }
+
+    func addCustomTarget(name: String, globalPath: String, projectRelativePath: String) throws {
+        let target = try makeCustomTarget(
+            name: name,
+            globalPath: globalPath,
+            projectRelativePath: projectRelativePath,
+            )
+        customTargets.append(target)
+        try save()
+    }
+
+    func removeCustomTarget(_ target: AgentTarget) {
+        customTargets.removeAll { $0.id == target.id }
+        do {
             try save()
         } catch {
             report(error)
@@ -319,12 +344,56 @@ final class AppStore {
         enablements.append(enablement)
     }
 
+    private func makeCustomTarget(
+        name: String,
+        globalPath: String,
+        projectRelativePath: String,
+        ) throws -> AgentTarget {
+        let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            throw AppError.message("Enter a target name.")
+        }
+        guard !targets.contains(where: {
+            $0.name.caseInsensitiveCompare(trimmedName) == .orderedSame
+        }) else {
+            throw AppError.message("A target named \(trimmedName) already exists.")
+        }
+
+        let global = globalPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        let project = projectRelativePath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !global.isEmpty || !project.isEmpty else {
+            throw AppError.message("Fill at least one path.")
+        }
+
+        if !global.isEmpty {
+            let isAbsolute = global.hasPrefix("/") || global == "~" || global.hasPrefix("~/")
+            guard isAbsolute else {
+                throw AppError.message("Global path must be absolute or start with ~/.")
+            }
+        }
+        if !project.isEmpty {
+            let isRelative = !project.hasPrefix("/") && !project.hasPrefix("~")
+                && !project.split(separator: "/").contains("..")
+            guard isRelative else {
+                throw AppError.message("Project path must be relative to a project folder.")
+            }
+        }
+
+        return AgentTarget(
+            id: UUID().uuidString,
+            name: trimmedName,
+            projectRelativePath: project.isEmpty ? nil : project,
+            globalPath: global.isEmpty ? nil : global,
+            )
+    }
+
     private func save() throws {
         try StateFile.save(
             StoredState(
                 skills: skills,
                 projects: projects,
                 enablements: enablements,
+                customTargets: customTargets,
                 ),
             )
     }

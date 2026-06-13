@@ -156,7 +156,7 @@ struct EnablementRecord: Identifiable, Codable, Hashable {
     var createdAt: Date
 }
 
-struct AgentTarget: Identifiable, Hashable {
+struct AgentTarget: Identifiable, Hashable, Codable {
     var id: String
     var name: String
     var projectRelativePath: String?
@@ -170,7 +170,7 @@ struct AgentTarget: Identifiable, Hashable {
         globalPath != nil
     }
 
-    static let all: [AgentTarget] = [
+    static let builtins: [AgentTarget] = [
         AgentTarget(
             id: "universal",
             name: "Universal",
@@ -304,6 +304,22 @@ struct StoredState: Codable {
     var skills: [SkillRecord] = []
     var projects: [ProjectRecord] = []
     var enablements: [EnablementRecord] = []
+    var customTargets: [AgentTarget] = []
+}
+
+extension StoredState {
+    private enum CodingKeys: String, CodingKey {
+        case skills, projects, enablements, customTargets
+    }
+
+    // Decode tolerantly so adding new fields never invalidates an existing state file.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        skills = try container.decodeIfPresent([SkillRecord].self, forKey: .skills) ?? []
+        projects = try container.decodeIfPresent([ProjectRecord].self, forKey: .projects) ?? []
+        enablements = try container.decodeIfPresent([EnablementRecord].self, forKey: .enablements) ?? []
+        customTargets = try container.decodeIfPresent([AgentTarget].self, forKey: .customTargets) ?? []
+    }
 }
 
 enum SkillReaderKind: String, Codable {
