@@ -276,7 +276,7 @@ enum SkillLibrary {
                 try FileManager.default.removeItem(at: destination)
             } else {
                 throw AppError.message(
-                    "A skill named \(destination.lastPathComponent) already exists.",
+                    "The name \(destination.lastPathComponent) is already in use.",
                     )
             }
         }
@@ -348,7 +348,7 @@ enum SkillLibrary {
                 try FileManager.default.removeItem(at: destination)
             } else {
                 throw AppError.message(
-                    "A skill named \(destination.lastPathComponent) already exists.",
+                    "The name \(destination.lastPathComponent) is already in use.",
                     )
             }
         }

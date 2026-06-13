@@ -257,7 +257,18 @@ final class AppStore {
     }
 
     func installed(_ result: SkillSearchResult) -> Bool {
-        skills.contains { $0.name == SkillLibrary.sanitizeSkillName(result.resolvedSkillID) }
+        skills.contains { skill in
+            switch result.searchSource {
+            case .skillsSh:
+                skill.sourceKind == .skillsSh
+                    && skill.source == result.source
+                    && skill.skillId == result.resolvedSkillID
+            case .git:
+                skill.sourceKind == .git
+                    && skill.gitURL == result.gitURL
+                    && skill.subpath == result.subpath
+            }
+        }
     }
 
     func enablements(for skill: SkillRecord) -> [EnablementRecord] {
