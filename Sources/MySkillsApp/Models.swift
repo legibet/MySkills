@@ -178,6 +178,12 @@ struct AgentTarget: Identifiable, Hashable, Codable {
             globalPath: "~/.agents/skills",
             ),
         AgentTarget(
+            id: "antigravity",
+            name: "Antigravity",
+            projectRelativePath: nil,
+            globalPath: "~/.gemini/config/skills",
+            ),
+        AgentTarget(
             id: "claude-code",
             name: "Claude Code",
             projectRelativePath: ".claude/skills",
