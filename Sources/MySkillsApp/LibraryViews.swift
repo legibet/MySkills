@@ -497,7 +497,7 @@ struct EnableSheet: View {
 
     @State private var scope = SkillScope.project
     @State private var projectURL: URL?
-    @State private var selectedTargetIDs: Set<String> = ["universal"]
+    @State private var selectedTargetIDs: Set<String> = []
 
     private var availableTargets: [AgentTarget] {
         store.targets.filter { target in
@@ -506,7 +506,7 @@ struct EnableSheet: View {
     }
 
     private var selectedTargets: Set<AgentTarget> {
-        Set(availableTargets.filter { selectedTargetIDs.contains($0.id) })
+        Set(availableTargets.filter { selectedTargetIDs.contains($0.id) && !isEnabled($0) })
     }
 
     private var canEnable: Bool {
@@ -525,7 +525,7 @@ struct EnableSheet: View {
             }
             .pickerStyle(.segmented)
             .onChange(of: scope) { _, _ in
-                selectedTargetIDs = ["universal"]
+                selectedTargetIDs = []
             }
 
             if scope == .project {
@@ -558,6 +558,9 @@ struct EnableSheet: View {
         .frame(width: 460)
         .onAppear {
             projectURL = store.projects.first.map { URL(fileURLWithPath: $0.path) }
+        }
+        .onChange(of: projectURL) { _, _ in
+            selectedTargetIDs = []
         }
     }
 
@@ -605,6 +608,7 @@ struct EnableSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+                .disabled(isEnabled(target))
             }
         }
     }
@@ -620,8 +624,12 @@ struct EnableSheet: View {
 
     private func binding(for target: AgentTarget) -> Binding<Bool> {
         Binding(
-            get: { selectedTargetIDs.contains(target.id) },
+            get: { isEnabled(target) || selectedTargetIDs.contains(target.id) },
             set: { enabled in
+                guard !isEnabled(target) else {
+                    return
+                }
+
                 if enabled {
                     selectedTargetIDs.insert(target.id)
                 } else {
@@ -629,6 +637,15 @@ struct EnableSheet: View {
                 }
             },
             )
+    }
+
+    private func isEnabled(_ target: AgentTarget) -> Bool {
+        store.enablements.contains { record in
+            record.skillName == skill.name
+                && record.scope == scope
+                && record.targetID == target.id
+                && (scope == .global || record.projectPath == projectURL?.path)
+        }
     }
 
     private func pathHint(for target: AgentTarget) -> String {
