@@ -175,10 +175,19 @@ struct SearchResultRow: View {
                         .foregroundStyle(.primary)
                         .lineLimit(1)
 
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(sourceSubtitle)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        if let installCountText {
+                            Text("- \(installCountText)")
+                                .lineLimit(1)
+                                .layoutPriority(1)
+                        }
+                    }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -217,7 +226,7 @@ struct SearchResultRow: View {
         .onHover { isHovering = $0 }
     }
 
-    private var subtitle: String {
+    private var sourceSubtitle: String {
         if result.searchSource == .git {
             let repository = result.gitURL.map(SourceURL.repositoryLabel) ?? result.source
             if let subpath = result.subpath, !subpath.isEmpty {
@@ -227,5 +236,14 @@ struct SearchResultRow: View {
         }
 
         return "\(result.source)/\(result.resolvedSkillID)"
+    }
+
+    private var installCountText: String? {
+        guard result.searchSource == .skillsSh else {
+            return nil
+        }
+
+        let label = result.installs == 1 ? "install" : "installs"
+        return "\(result.installs.formatted()) \(label)"
     }
 }
