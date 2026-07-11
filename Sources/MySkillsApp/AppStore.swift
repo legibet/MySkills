@@ -312,15 +312,26 @@ final class AppStore {
             upsert(updated)
 
         case .git:
-            guard let input = skill.sourceInput else {
+            guard let gitURL = skill.gitURL else {
                 throw AppError.message("This skill is missing source metadata.")
             }
-            let installed = try await Task.detached {
-                try GitInstaller.install(input, replacing: replacingLocalChanges, wantedName: skill.name)
+            // Reinstall from the exact stored location (gitURL + subpath) so a repo
+            // containing multiple skills with the same name doesn't get remapped.
+            let result = SkillSearchResult(
+                id: "git:\(gitURL):\(skill.subpath ?? ".")",
+                skillId: skill.name,
+                name: skill.displayName,
+                installs: 0,
+                source: SourceURL.repositoryLabel(from: gitURL),
+                searchSource: .git,
+                sourceInput: skill.sourceInput,
+                gitURL: gitURL,
+                ref: skill.ref,
+                subpath: skill.subpath,
+                )
+            var updated = try await Task.detached {
+                try GitInstaller.install(result, replacing: replacingLocalChanges)
             }.value
-            guard var updated = installed.first else {
-                throw AppError.message("No matching skill was found while updating.")
-            }
             updated.installedAt = skill.installedAt
             upsert(updated)
 

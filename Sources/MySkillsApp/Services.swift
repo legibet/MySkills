@@ -563,7 +563,7 @@ enum GitInstaller {
             } ?? cloneURL
 
         let skillFolders = try findSkillFolders(in: searchRoot)
-        let selectedFolders = filterSkillFolders(skillFolders, parsed: parsed, wantedName: nil)
+        let selectedFolders = filterSkillFolders(skillFolders, parsed: parsed)
 
         guard !selectedFolders.isEmpty else {
             throw AppError.message("No matching skill was found in this source.")
@@ -639,58 +639,6 @@ enum GitInstaller {
             installedAt: Date(),
             updatedAt: Date(),
             )
-    }
-
-    static func install(_ input: String, replacing: Bool, wantedName: String? = nil) throws
-    -> [SkillRecord] {
-        let parsed = try parse(input)
-        let cloneURL = try clone(parsed)
-        defer {
-            try? FileManager.default.removeItem(at: cloneURL)
-        }
-
-        let searchRoot =
-            parsed.subpath.map {
-                cloneURL.appendingPathComponent($0, isDirectory: true)
-            } ?? cloneURL
-
-        let skillFolders = try findSkillFolders(in: searchRoot)
-        let selectedFolders = filterSkillFolders(
-            skillFolders,
-            parsed: parsed,
-            wantedName: wantedName,
-            )
-
-        guard !selectedFolders.isEmpty else {
-            throw AppError.message("No matching skill was found in this source.")
-        }
-
-        return try selectedFolders.map { folder in
-            let metadata = SkillLibrary.parseSkillMetadata(
-                at: folder.appendingPathComponent("SKILL.md"),
-                )
-            let name = SkillLibrary.sanitizeSkillName(
-                wantedName ?? metadata.name ?? folder.lastPathComponent,
-                )
-            let destination = PathResolver.skillURL(name)
-
-            try SkillLibrary.copySkillDirectory(from: folder, to: destination, replacing: replacing)
-            let hash = try FolderHash.hash(destination)
-
-            return SkillRecord(
-                name: name,
-                displayName: metadata.name ?? name,
-                description: metadata.description ?? "",
-                sourceKind: .git,
-                sourceInput: parsed.input,
-                gitURL: parsed.gitURL,
-                ref: parsed.ref,
-                subpath: relativePath(from: cloneURL, to: folder),
-                importedHash: hash,
-                installedAt: Date(),
-                updatedAt: Date(),
-                )
-        }
     }
 
     static func parse(_ input: String) throws -> ParsedGitSource {
@@ -850,10 +798,9 @@ enum GitInstaller {
     private static func filterSkillFolders(
         _ folders: [URL],
         parsed: ParsedGitSource,
-        wantedName: String?,
         ) -> [URL] {
         folders.filter { folder in
-            guard let filter = wantedName ?? parsed.skillFilter else {
+            guard let filter = parsed.skillFilter else {
                 return true
             }
 
