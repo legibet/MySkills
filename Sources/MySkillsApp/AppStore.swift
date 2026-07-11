@@ -1,6 +1,19 @@
 import AppKit
 import Foundation
 import Observation
+import SwiftUI
+
+enum UpdateOutcome {
+    case updated
+    case upToDate
+
+    var label: String {
+        switch self {
+        case .updated: "Updated"
+        case .upToDate: "Already up to date"
+        }
+    }
+}
 
 @MainActor
 @Observable
@@ -16,6 +29,8 @@ final class AppStore {
     var isSearching = false
     var isInstalling = false
     var pendingUpdate: SkillRecord?
+    var updatingSkillNames: Set<String> = []
+    var updateOutcomes: [String: UpdateOutcome] = [:]
 
     var targets: [AgentTarget] {
         AgentTarget.builtins + customTargets
@@ -290,6 +305,15 @@ final class AppStore {
     }
 
     private func update(_ skill: SkillRecord, replacingLocalChanges: Bool) async throws {
+        withAnimation { updateOutcomes[skill.name] = nil }
+        updatingSkillNames.insert(skill.name)
+        defer { updatingSkillNames.remove(skill.name) }
+
+        // Hash the on-disk folder (not importedHash) so replacing local edits
+        // with identical upstream content still reads as an update.
+        let previousHash = try? FolderHash.hash(PathResolver.skillURL(skill.name))
+
+        var updated: SkillRecord
         switch skill.sourceKind {
         case .skillsSh:
             guard let source = skill.source, let skillID = skill.skillId else {
@@ -303,13 +327,11 @@ final class AppStore {
                 source: source,
                 )
             let response = try await SkillsSearchClient.download(source: source, skillID: skillID)
-            var updated = try SkillLibrary.installDownloadedSkill(
+            updated = try SkillLibrary.installDownloadedSkill(
                 result: result,
                 response: response,
                 replacing: replacingLocalChanges,
                 )
-            updated.installedAt = skill.installedAt
-            upsert(updated)
 
         case .git:
             guard let gitURL = skill.gitURL else {
@@ -329,17 +351,29 @@ final class AppStore {
                 ref: skill.ref,
                 subpath: skill.subpath,
                 )
-            var updated = try await Task.detached {
+            updated = try await Task.detached {
                 try GitInstaller.install(result, replacing: replacingLocalChanges)
             }.value
-            updated.installedAt = skill.installedAt
-            upsert(updated)
 
         case .local:
             throw AppError.message("This skill cannot be updated automatically.")
         }
 
-        try save()
+        let outcome: UpdateOutcome
+        if updated.importedHash == previousHash {
+            outcome = .upToDate
+        } else {
+            updated.installedAt = skill.installedAt
+            upsert(updated)
+            try save()
+            outcome = .updated
+        }
+
+        withAnimation { updateOutcomes[skill.name] = outcome }
+        Task {
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation { updateOutcomes[skill.name] = nil }
+        }
     }
 
     private func openFolder(_ url: URL, mode: FolderOpenMode, applicationPath: String) {

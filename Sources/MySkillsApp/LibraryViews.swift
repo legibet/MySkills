@@ -385,7 +385,7 @@ struct SkillDetailView: View {
                     Label("Update", systemImage: "arrow.down.circle")
                 }
                 .keyboardShortcut("u", modifiers: [.command])
-                .disabled(!skill.canUpdate)
+                .disabled(!skill.canUpdate || store.updatingSkillNames.contains(skill.name))
 
                 Button {
                     if let url = skill.sourceWebURL {
@@ -400,6 +400,18 @@ struct SkillDetailView: View {
                     requestRemove(skill)
                 } label: {
                     Label("Remove", systemImage: "trash")
+                }
+
+                if store.updatingSkillNames.contains(skill.name) {
+                    ProgressView()
+                        .controlSize(.small)
+                        .padding(.leading, 4)
+                } else if let outcome = store.updateOutcomes[skill.name] {
+                    Text(outcome.label)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .padding(.leading, 4)
+                        .transition(.opacity)
                 }
             }
         }

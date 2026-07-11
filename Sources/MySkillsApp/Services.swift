@@ -138,8 +138,12 @@ enum SkillsSearchClient {
             )!
 
         let (data, response) = try await URLSession.shared.data(from: url)
-        guard let http = response as? HTTPURLResponse, 200 ..< 300 ~= http.statusCode else {
-            throw AppError.message("GitHub skill download failed.")
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 404 {
+            throw AppError.message("This skill is no longer available on skills.sh.")
+        }
+        guard 200 ..< 300 ~= status else {
+            throw AppError.message("Skill download from skills.sh failed.")
         }
 
         return try JSONDecoder().decode(DownloadResponse.self, from: data)
