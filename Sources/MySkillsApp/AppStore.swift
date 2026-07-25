@@ -38,12 +38,14 @@ final class AppStore {
 
     func load() {
         do {
-            let state = StateFile.load()
+            let result = try StateFile.load()
+            let state = result.state
             skills = try SkillLibrary.scan(knownSkills: state.skills)
             projects = state.projects.sorted { $0.lastUsedAt > $1.lastUsedAt }
             enablements = SymlinkService.validEnablements(state.enablements)
             customTargets = state.customTargets
             try save()
+            errorMessage = result.recoveryMessage
         } catch {
             report(error)
         }
@@ -77,16 +79,15 @@ final class AppStore {
                 let response = try await SkillsSearchClient.download(
                     source: result.source,
                     skillID: result.resolvedSkillID,
-                    )
+                )
                 skill = try SkillLibrary.installDownloadedSkill(
                     result: result,
                     response: response,
-                    replacing: false,
                     )
 
             case .git:
                 skill = try await Task.detached {
-                    try GitInstaller.install(result, replacing: false)
+                    try GitInstaller.install(result)
                 }.value
             }
 
@@ -217,7 +218,7 @@ final class AppStore {
                 }
             }
 
-            try await update(skill, replacingLocalChanges: true)
+            try await update(skill)
         } catch {
             report(error)
         }
@@ -231,7 +232,7 @@ final class AppStore {
         pendingUpdate = nil
 
         do {
-            try await update(skill, replacingLocalChanges: true)
+            try await update(skill)
         } catch {
             report(error)
         }
@@ -304,7 +305,7 @@ final class AppStore {
             .sorted { $0.skillName < $1.skillName }
     }
 
-    private func update(_ skill: SkillRecord, replacingLocalChanges: Bool) async throws {
+    private func update(_ skill: SkillRecord) async throws {
         withAnimation { updateOutcomes[skill.name] = nil }
         updatingSkillNames.insert(skill.name)
         defer { updatingSkillNames.remove(skill.name) }
@@ -330,7 +331,7 @@ final class AppStore {
             updated = try SkillLibrary.installDownloadedSkill(
                 result: result,
                 response: response,
-                replacing: replacingLocalChanges,
+                replacing: skill.name,
                 )
 
         case .git:
@@ -352,7 +353,7 @@ final class AppStore {
                 subpath: skill.subpath,
                 )
             updated = try await Task.detached {
-                try GitInstaller.install(result, replacing: replacingLocalChanges)
+                try GitInstaller.install(result, replacing: skill.name)
             }.value
 
         case .local:

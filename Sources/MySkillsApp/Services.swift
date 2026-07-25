@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Yams
 
 enum AppError: LocalizedError {
     case message(String)
@@ -68,12 +69,30 @@ enum PathResolver {
 }
 
 enum StateFile {
-    static func load() -> StoredState {
+    static func load() throws -> (state: StoredState, recoveryMessage: String?) {
+        let data: Data
         do {
-            let data = try Data(contentsOf: PathResolver.stateFile)
-            return try JSONDecoder().decode(StoredState.self, from: data)
+            data = try Data(contentsOf: PathResolver.stateFile)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            return (StoredState(), nil)
+        }
+
+        do {
+            return (try JSONDecoder().decode(StoredState.self, from: data), nil)
         } catch {
-            return StoredState()
+            let timestamp = Int(Date().timeIntervalSince1970)
+            let backupURL = PathResolver.root
+                .appendingPathComponent("state.corrupt-\(timestamp).json")
+            try FileManager.default.moveItem(at: PathResolver.stateFile, to: backupURL)
+
+            return (
+                StoredState(),
+                """
+                MySkills could not read its state file. The original was saved to \
+                \(backupURL.path). Skills were recovered from the library, but source metadata, \
+                projects, enablements, and custom targets could not be restored.
+                """
+                )
         }
     }
 
@@ -159,6 +178,11 @@ enum SkillsSearchClient {
 }
 
 enum SkillLibrary {
+    struct Metadata {
+        let name: String
+        let description: String
+    }
+
     static func prepare() throws {
         try FileManager.default.createDirectory(
             at: PathResolver.skillsDirectory,
@@ -214,45 +238,32 @@ enum SkillLibrary {
     static func installDownloadedSkill(
         result: SkillSearchResult,
         response: SkillsSearchClient.DownloadResponse,
-        replacing: Bool,
+        replacing installedName: String? = nil,
         ) throws -> SkillRecord {
-        let name = sanitizeSkillName(result.resolvedSkillID)
-        let destination = PathResolver.skillURL(name)
+        let installed = try installPreparedSkill(replacing: installedName) { stagingURL in
+            try writeFiles(response.files, to: stagingURL)
+        }
 
-        try writeFiles(response.files, to: destination, replacing: replacing)
-        let hash = try FolderHash.hash(destination)
-
-        let metadata = parseSkillMetadata(at: destination.appendingPathComponent("SKILL.md"))
         return SkillRecord(
-            name: name,
-            displayName: metadata.name ?? result.name,
-            description: metadata.description ?? "",
+            name: installed.metadata.name,
+            displayName: installed.metadata.name,
+            description: installed.metadata.description,
             sourceKind: .skillsSh,
             source: result.source,
             skillId: result.resolvedSkillID,
-            importedHash: hash,
+            importedHash: installed.hash,
             installedAt: Date(),
             updatedAt: Date(),
             )
     }
 
     static func importLocalFolder(_ folder: URL) throws -> SkillRecord {
-        let skillFile = folder.appendingPathComponent("SKILL.md")
-        guard FileManager.default.fileExists(atPath: skillFile.path) else {
-            throw AppError.message("The selected folder does not contain SKILL.md.")
-        }
-
-        let metadata = parseSkillMetadata(at: skillFile)
-        let name = sanitizeSkillName(metadata.name ?? folder.lastPathComponent)
-        let destination = PathResolver.skillURL(name)
-
-        try prepare()
-        try copySkillDirectory(from: folder, to: destination, replacing: false)
+        let installed = try installSkillDirectory(from: folder)
 
         return SkillRecord(
-            name: name,
-            displayName: metadata.name ?? name,
-            description: metadata.description ?? "",
+            name: installed.metadata.name,
+            displayName: installed.metadata.name,
+            description: installed.metadata.description,
             sourceKind: .local,
             installedAt: Date(),
             )
@@ -270,95 +281,203 @@ enum SkillLibrary {
         return try MarkdownCleaner.stripFrontmatter(String(contentsOf: skillFile, encoding: .utf8))
     }
 
-    static func copySkillDirectory(
+    static func installSkillDirectory(
         from source: URL,
-        to destination: URL,
-        replacing: Bool,
-        ) throws {
-        if FileManager.default.fileExists(atPath: destination.path) || isSymlink(destination) {
-            if replacing {
-                try FileManager.default.removeItem(at: destination)
-            } else {
-                throw AppError.message(
-                    "The name \(destination.lastPathComponent) is already in use.",
-                    )
-            }
+        replacing installedName: String? = nil,
+        ) throws -> (metadata: Metadata, hash: String) {
+        try installPreparedSkill(replacing: installedName) { stagingURL in
+            try copyContents(from: source, to: stagingURL)
         }
-
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-        try copyContents(from: source, to: destination)
-    }
-
-    static func sanitizeSkillName(_ raw: String) -> String {
-        let lowercased = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
-        let scalars = lowercased.unicodeScalars.map { scalar in
-            allowed.contains(scalar) ? Character(scalar) : "-"
-        }
-        let collapsed = String(scalars).replacingOccurrences(
-            of: "-+",
-            with: "-",
-            options: .regularExpression,
-            )
-        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
     static func parseSkillMetadata(at url: URL) -> (name: String?, description: String?) {
-        guard let text = try? String(contentsOf: url, encoding: .utf8) else {
+        guard let mapping = try? parseFrontmatter(at: url) else {
             return (nil, nil)
         }
 
-        var lines = text.components(separatedBy: .newlines)
-        guard lines.first == "---" else {
-            return (nil, nil)
+        return (
+            scalar("name", in: mapping)?.trimmingCharacters(in: .whitespacesAndNewlines),
+            scalar("description", in: mapping)?.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+    }
+
+    @discardableResult
+    static func validateSkill(at folder: URL, expectedName: String? = nil) throws -> Metadata {
+        let mapping = try parseFrontmatter(at: folder.appendingPathComponent("SKILL.md"))
+
+        guard let rawName = scalar("name", in: mapping) else {
+            throw AppError.message("SKILL.md frontmatter must contain a string field named 'name'.")
         }
-        lines.removeFirst()
+        let name = rawName
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .precomposedStringWithCompatibilityMapping
 
-        var name: String?
-        var description: String?
-        var index = 0
+        guard !name.isEmpty else {
+            throw AppError.message("SKILL.md field 'name' must not be empty.")
+        }
+        guard name.count <= 64 else {
+            throw AppError.message("SKILL.md field 'name' must not exceed 64 characters.")
+        }
+        guard name == name.lowercased() else {
+            throw AppError.message("SKILL.md field 'name' must be lowercase.")
+        }
+        guard !name.hasPrefix("-"), !name.hasSuffix("-"), !name.contains("--") else {
+            throw AppError.message(
+                "SKILL.md field 'name' cannot start or end with a hyphen or contain consecutive hyphens."
+            )
+        }
+        guard name.unicodeScalars.allSatisfy({
+            $0 == "-" || CharacterSet.alphanumerics.contains($0)
+        }) else {
+            throw AppError.message(
+                "SKILL.md field 'name' may contain only letters, numbers, and hyphens."
+            )
+        }
 
-        while index < lines.count {
-            let line = lines[index]
-            index += 1
-
-            if line == "---" {
-                break
+        if let expectedName {
+            let normalizedExpectedName = expectedName.precomposedStringWithCompatibilityMapping
+            guard name == normalizedExpectedName else {
+                throw AppError.message(
+                    "Skill directory '\(expectedName)' must match the name '\(name)' in SKILL.md."
+                )
             }
+        }
 
-            if line.hasPrefix("name:") {
-                name = cleanFrontmatterValue(String(line.dropFirst("name:".count)))
+        guard let rawDescription = scalar("description", in: mapping) else {
+            throw AppError.message(
+                "SKILL.md frontmatter must contain a string field named 'description'."
+            )
+        }
+        let description = rawDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !description.isEmpty else {
+            throw AppError.message("SKILL.md field 'description' must not be empty.")
+        }
+        guard rawDescription.count <= 1024 else {
+            throw AppError.message("SKILL.md field 'description' must not exceed 1024 characters.")
+        }
+
+        if node("license", in: mapping) != nil, scalar("license", in: mapping) == nil {
+            throw AppError.message("SKILL.md field 'license' must be a string.")
+        }
+
+        if node("allowed-tools", in: mapping) != nil,
+           scalar("allowed-tools", in: mapping) == nil
+        {
+            throw AppError.message("SKILL.md field 'allowed-tools' must be a string.")
+        }
+
+        if let metadataNode = node("metadata", in: mapping) {
+            guard case let .mapping(metadataMapping) = metadataNode else {
+                throw AppError.message("SKILL.md field 'metadata' must be a mapping.")
             }
-
-            if line.hasPrefix("description:") {
-                description = parseFrontmatterFieldValue(
-                    String(line.dropFirst("description:".count)),
-                    lines: lines,
-                    index: &index,
+            for pair in metadataMapping {
+                guard pair.key.scalar != nil, pair.value.scalar != nil else {
+                    throw AppError.message(
+                        "SKILL.md field 'metadata' must contain string keys and values."
                     )
+                }
             }
         }
 
-        return (name, description)
+        if node("compatibility", in: mapping) != nil {
+            guard let compatibility = scalar("compatibility", in: mapping) else {
+                throw AppError.message("SKILL.md field 'compatibility' must be a string.")
+            }
+            guard !compatibility.isEmpty, compatibility.count <= 500 else {
+                throw AppError.message(
+                    "SKILL.md field 'compatibility' must contain 1 to 500 characters."
+                )
+            }
+        }
+
+        return Metadata(name: name, description: description)
+    }
+
+    private static func installPreparedSkill(
+        replacing installedName: String?,
+        populate: (URL) throws -> Void,
+        ) throws -> (metadata: Metadata, hash: String) {
+        try prepare()
+
+        let fileManager = FileManager.default
+        let stagingURL = PathResolver.skillsDirectory
+            .appendingPathComponent(".incoming-\(UUID().uuidString)", isDirectory: true)
+        try fileManager.createDirectory(at: stagingURL, withIntermediateDirectories: false)
+        defer {
+            try? fileManager.removeItem(at: stagingURL)
+        }
+
+        try populate(stagingURL)
+        let metadata = try validateSkill(at: stagingURL, expectedName: installedName)
+        let hash = try FolderHash.hash(stagingURL)
+        let destination = PathResolver.skillURL(metadata.name)
+        let destinationExists =
+            fileManager.fileExists(atPath: destination.path) || isSymlink(destination)
+
+        if installedName == nil {
+            guard !destinationExists else {
+                throw AppError.message("The name \(metadata.name) is already in use.")
+            }
+            try fileManager.moveItem(at: stagingURL, to: destination)
+        } else {
+            _ = try fileManager.replaceItemAt(
+                destination,
+                withItemAt: stagingURL,
+                backupItemName: ".backup-\(UUID().uuidString)",
+                options: .usingNewMetadataOnly,
+                )
+        }
+
+        return (metadata, hash)
+    }
+
+    private static func parseFrontmatter(at url: URL) throws -> Node.Mapping {
+        let text: String
+        do {
+            text = try String(contentsOf: url, encoding: .utf8)
+        } catch {
+            throw AppError.message("SKILL.md must exist and use UTF-8 encoding.")
+        }
+
+        let lines = text
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
+        guard lines.first == "---" else {
+            throw AppError.message("SKILL.md must start with YAML frontmatter.")
+        }
+        guard let endIndex = lines.dropFirst().firstIndex(of: "---") else {
+            throw AppError.message("SKILL.md frontmatter must end with '---'.")
+        }
+
+        let yaml = lines[1 ..< endIndex].joined(separator: "\n")
+        let root: Node?
+        do {
+            root = try compose(yaml: yaml)
+        } catch {
+            throw AppError.message("SKILL.md contains invalid YAML: \(error.localizedDescription)")
+        }
+
+        guard let root else {
+            throw AppError.message("SKILL.md frontmatter must be a YAML mapping.")
+        }
+        guard case let .mapping(mapping) = root else {
+            throw AppError.message("SKILL.md frontmatter must be a YAML mapping.")
+        }
+        return mapping
+    }
+
+    private static func scalar(_ field: String, in mapping: Node.Mapping) -> String? {
+        node(field, in: mapping)?.scalar?.string
+    }
+
+    private static func node(_ field: String, in mapping: Node.Mapping) -> Node? {
+        mapping.first { $0.key.scalar?.string == field }?.value
     }
 
     private static func writeFiles(
         _ files: [SkillsSearchClient.DownloadedFile],
         to destination: URL,
-        replacing: Bool,
         ) throws {
-        if FileManager.default.fileExists(atPath: destination.path) || isSymlink(destination) {
-            if replacing {
-                try FileManager.default.removeItem(at: destination)
-            } else {
-                throw AppError.message(
-                    "The name \(destination.lastPathComponent) is already in use.",
-                    )
-            }
-        }
-
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
-
         for file in files {
             let relative = try safeRelativePath(file.path)
             let fileURL = destination.appendingPathComponent(relative)
@@ -402,49 +521,6 @@ enum SkillLibrary {
 
     private static func isSymlink(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
-    }
-
-    private static func cleanFrontmatterValue(_ value: String) -> String {
-        value
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-    }
-
-    private static func parseFrontmatterFieldValue(
-        _ value: String,
-        lines: [String],
-        index: inout Int,
-        ) -> String {
-        let cleaned = cleanFrontmatterValue(value)
-        guard cleaned == ">" || cleaned == "|" else {
-            return cleaned
-        }
-
-        var blockLines: [String] = []
-
-        while index < lines.count {
-            let line = lines[index]
-            if line == "---" || (!line.isEmpty && !line.first!.isWhitespace) {
-                break
-            }
-            blockLines.append(line)
-            index += 1
-        }
-
-        let indent = blockLines
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            .map { $0.prefix { $0.isWhitespace }.count }
-            .min() ?? 0
-        let normalizedLines = blockLines.map { String($0.dropFirst(min(indent, $0.count))) }
-
-        if cleaned == ">" {
-            return normalizedLines
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-        }
-
-        return normalizedLines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private static func safeRelativePath(_ path: String) throws -> String {
@@ -576,7 +652,7 @@ enum GitInstaller {
         return try selectedFolders.map { folder in
             let skillFile = folder.appendingPathComponent("SKILL.md")
             let metadata = SkillLibrary.parseSkillMetadata(at: skillFile)
-            let skillName = SkillLibrary.sanitizeSkillName(metadata.name ?? folder.lastPathComponent)
+            let skillName = normalizedLookupName(metadata.name ?? folder.lastPathComponent)
             let relativePath = relativePath(from: cloneURL, to: folder)
             let markdown = try String(contentsOf: skillFile, encoding: .utf8)
 
@@ -596,7 +672,10 @@ enum GitInstaller {
         }
     }
 
-    static func install(_ result: SkillSearchResult, replacing: Bool) throws -> SkillRecord {
+    static func install(
+        _ result: SkillSearchResult,
+        replacing installedName: String? = nil,
+        ) throws -> SkillRecord {
         guard result.searchSource == .git, let gitURL = result.gitURL else {
             throw AppError.message("This result is missing Git source metadata.")
         }
@@ -621,25 +700,21 @@ enum GitInstaller {
             throw AppError.message("No matching skill was found in this source.")
         }
 
-        let metadata = SkillLibrary.parseSkillMetadata(at: skillFile)
-        let name = SkillLibrary.sanitizeSkillName(
-            result.skillId ?? metadata.name ?? folder.lastPathComponent,
+        let installed = try SkillLibrary.installSkillDirectory(
+            from: folder,
+            replacing: installedName,
             )
-        let destination = PathResolver.skillURL(name)
-
-        try SkillLibrary.copySkillDirectory(from: folder, to: destination, replacing: replacing)
-        let hash = try FolderHash.hash(destination)
 
         return SkillRecord(
-            name: name,
-            displayName: metadata.name ?? result.name,
-            description: metadata.description ?? "",
+            name: installed.metadata.name,
+            displayName: installed.metadata.name,
+            description: installed.metadata.description,
             sourceKind: .git,
             sourceInput: result.sourceInput ?? gitURL,
             gitURL: gitURL,
             ref: result.ref,
             subpath: result.subpath,
-            importedHash: hash,
+            importedHash: installed.hash,
             installedAt: Date(),
             updatedAt: Date(),
             )
@@ -811,11 +886,25 @@ enum GitInstaller {
             let metadata = SkillLibrary.parseSkillMetadata(
                 at: folder.appendingPathComponent("SKILL.md"),
                 )
-            let folderName = SkillLibrary.sanitizeSkillName(folder.lastPathComponent)
-            let metadataName = metadata.name.map(SkillLibrary.sanitizeSkillName)
-            let cleanFilter = SkillLibrary.sanitizeSkillName(filter)
+            let folderName = normalizedLookupName(folder.lastPathComponent)
+            let metadataName = metadata.name.map(normalizedLookupName)
+            let cleanFilter = normalizedLookupName(filter)
             return folderName == cleanFilter || metadataName == cleanFilter
         }
+    }
+
+    private static func normalizedLookupName(_ raw: String) -> String {
+        let lowercased = raw.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let scalars = lowercased.unicodeScalars.map { scalar in
+            allowed.contains(scalar) ? Character(scalar) : "-"
+        }
+        let collapsed = String(scalars).replacingOccurrences(
+            of: "-+",
+            with: "-",
+            options: .regularExpression,
+            )
+        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-"))
     }
 
     private static func relativePath(from root: URL, to folder: URL) -> String? {
@@ -869,6 +958,8 @@ enum SymlinkService {
     static func enable(skill: SkillRecord, scope: SkillScope, target: AgentTarget, projectURL: URL?)
     throws -> EnablementRecord {
         let source = PathResolver.skillURL(skill.name)
+        try SkillLibrary.validateSkill(at: source, expectedName: skill.name)
+
         let directory = try PathResolver.targetDirectory(
             scope: scope, target: target, projectURL: projectURL,
             )
