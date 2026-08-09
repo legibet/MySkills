@@ -42,7 +42,10 @@ final class AppStore {
             let state = result.state
             skills = try SkillLibrary.scan(knownSkills: state.skills)
             projects = state.projects.sorted { $0.lastUsedAt > $1.lastUsedAt }
-            enablements = SymlinkService.validEnablements(state.enablements)
+            enablements = try SymlinkService.reconcile(
+                state.enablements,
+                with: skills,
+                )
             customTargets = state.customTargets
             try save()
             errorMessage = result.recoveryMessage
@@ -210,6 +213,10 @@ final class AppStore {
 
     func requestUpdate(_ skill: SkillRecord) async {
         do {
+            guard skill.isAvailable else {
+                throw AppError.message(skill.availabilityIssue?.label ?? "This skill is unavailable.")
+            }
+
             if let importedHash = skill.importedHash {
                 let currentHash = try FolderHash.hash(PathResolver.skillURL(skill.name))
                 if currentHash != importedHash {
@@ -291,6 +298,10 @@ final class AppStore {
         enablements
             .filter { $0.skillName == skill.name }
             .sorted { $0.targetPath < $1.targetPath }
+    }
+
+    func skill(named name: String) -> SkillRecord? {
+        skills.first { $0.name == name }
     }
 
     func enablements(for project: ProjectRecord) -> [EnablementRecord] {

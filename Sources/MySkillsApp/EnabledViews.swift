@@ -256,6 +256,12 @@ struct EnablementRecordLine: View {
                 .font(.body.weight(.medium))
                 .lineLimit(1)
 
+            if store.skill(named: record.skillName)?.isAvailable == false {
+                Label("Unavailable", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+            }
+
             Spacer()
 
             DisableEnablementControl(store: store, records: [record])
@@ -279,6 +285,12 @@ struct ProjectEnablementLine: View {
                 Text(group.targetNames)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+
+                if store.skill(named: group.skillName)?.isAvailable == false {
+                    Label("Unavailable", systemImage: "exclamationmark.triangle.fill")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
             }
 
             Spacer()

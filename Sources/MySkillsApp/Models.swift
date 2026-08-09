@@ -32,6 +32,18 @@ enum SourceKind: String, Codable {
     case local
 }
 
+enum SkillAvailabilityIssue: String, Codable, Hashable {
+    case missingLinkTarget
+    case invalidSkill
+
+    var label: String {
+        switch self {
+        case .missingLinkTarget: "Linked folder is unavailable."
+        case .invalidSkill: "This folder does not contain a valid SKILL.md."
+        }
+    }
+}
+
 enum SearchSource: String, Codable, Hashable {
     case skillsSh
     case git
@@ -81,9 +93,14 @@ struct SkillRecord: Identifiable, Codable, Hashable {
     var importedHash: String?
     var installedAt: Date
     var updatedAt: Date?
+    var availabilityIssue: SkillAvailabilityIssue?
+
+    var isAvailable: Bool {
+        availabilityIssue == nil
+    }
 
     var canUpdate: Bool {
-        sourceKind != .local
+        sourceKind != .local && isAvailable
     }
 
     var readerRequest: SkillReaderRequest {

@@ -210,24 +210,32 @@ enum SkillLibrary {
             }
 
             let skillName = url.lastPathComponent
-            let skillFile = url.appendingPathComponent("SKILL.md")
-            guard FileManager.default.fileExists(atPath: skillFile.path) else {
-                return nil
-            }
-
-            let metadata = parseSkillMetadata(at: skillFile)
             var record =
                 known[skillName]
                 ?? SkillRecord(
                     name: skillName,
-                    displayName: metadata.name ?? skillName,
-                    description: metadata.description ?? "",
+                    displayName: skillName,
+                    description: "",
                     sourceKind: .local,
                     installedAt: Date(),
                     )
 
-            record.displayName = metadata.name ?? record.displayName
-            record.description = metadata.description ?? record.description
+            if isSymlink(url), !FileManager.default.fileExists(atPath: url.path) {
+                record.availabilityIssue = .missingLinkTarget
+                return record
+            }
+
+            let metadata: Metadata
+            do {
+                metadata = try validateSkill(at: url, expectedName: skillName)
+            } catch {
+                record.availabilityIssue = .invalidSkill
+                return record
+            }
+
+            record.displayName = metadata.name
+            record.description = metadata.description
+            record.availabilityIssue = nil
             return record
         }
         .sorted {
@@ -992,20 +1000,32 @@ enum SymlinkService {
         try FileManager.default.removeItem(at: destination)
     }
 
-    static func validEnablements(_ enablements: [EnablementRecord]) -> [EnablementRecord] {
-        enablements.compactMap { enablement in
+    static func reconcile(
+        _ enablements: [EnablementRecord],
+        with skills: [SkillRecord],
+        ) throws -> [EnablementRecord] {
+        let skillNames = Set(skills.map(\.name))
+        var valid: [EnablementRecord] = []
+
+        for enablement in enablements {
             let destination = URL(fileURLWithPath: enablement.targetPath)
             let source = PathResolver.skillURL(enablement.skillName)
-            guard (try? symlink(destination, pointsTo: source)) == true else {
-                return nil
+            guard try symlink(destination, pointsTo: source) else {
+                continue
             }
 
-            var record = enablement
-            if record.scope == .global {
-                record.projectPath = nil
+            if skillNames.contains(enablement.skillName) {
+                var record = enablement
+                if record.scope == .global {
+                    record.projectPath = nil
+                }
+                valid.append(record)
+            } else {
+                try FileManager.default.removeItem(at: destination)
             }
-            return record
         }
+
+        return valid
     }
 
     private static func makeRecord(

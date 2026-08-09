@@ -170,6 +170,7 @@ struct SkillListPanel: View {
                                         isListFocused = true
                                     },
                                     open: {
+                                        guard skill.isAvailable else { return }
                                         detailSyncTask?.cancel()
                                         highlighted = skill.name
                                         selectedSkillName = skill.name
@@ -184,6 +185,7 @@ struct SkillListPanel: View {
                                         selectedSkillName = skill.name
                                         openReader(skill)
                                     }
+                                    .disabled(!skill.isAvailable)
                                     Button("Open") {
                                         store.openSkill(
                                             skill,
@@ -191,6 +193,7 @@ struct SkillListPanel: View {
                                             applicationPath: selectedOpenApplicationPath,
                                             )
                                     }
+                                    .disabled(!skill.isAvailable)
                                     if let url = skill.sourceWebURL {
                                         Button("Source") {
                                             store.openURL(url)
@@ -271,7 +274,9 @@ struct SkillListPanel: View {
     }
 
     private func openSelectedSkill() -> KeyPress.Result {
-        guard let skill = filteredSkills.first(where: { $0.name == highlighted }) else {
+        guard let skill = filteredSkills.first(where: { $0.name == highlighted }),
+              skill.isAvailable
+        else {
             return .ignored
         }
 
@@ -291,10 +296,18 @@ struct SkillListRow: View {
     var body: some View {
         Button(action: select) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(skill.displayName)
-                    .font(.body.weight(.medium))
-                    .foregroundStyle(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(skill.displayName)
+                        .font(.body.weight(.medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+
+                    if !skill.isAvailable {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel("Unavailable")
+                    }
+                }
 
                 Text(subtitle)
                     .font(.caption)
@@ -332,6 +345,9 @@ struct SkillDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
+                if let issue = skill.availabilityIssue {
+                    unavailableMessage(issue)
+                }
                 metadata
                 enablements
             }
@@ -366,6 +382,7 @@ struct SkillDetailView: View {
                 }
                 .keyboardShortcut("e", modifiers: [.command])
                 .buttonStyle(.borderedProminent)
+                .disabled(!skill.isAvailable)
 
                 Button {
                     store.openSkill(
@@ -377,6 +394,7 @@ struct SkillDetailView: View {
                     Label("Open", systemImage: "folder")
                 }
                 .keyboardShortcut("o", modifiers: [.command])
+                .disabled(!skill.isAvailable)
 
                 Button {
                     Task { await store.requestUpdate(skill) }
@@ -414,6 +432,16 @@ struct SkillDetailView: View {
                 }
             }
         }
+    }
+
+    private func unavailableMessage(_ issue: SkillAvailabilityIssue) -> some View {
+        Label(issue.label, systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.orange)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.orange.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.cardCornerRadius))
     }
 
     private var description: String? {
@@ -521,7 +549,9 @@ struct EnableSheet: View {
     }
 
     private var canEnable: Bool {
-        !selectedTargets.isEmpty && (scope == .global || projectURL != nil)
+        skill.isAvailable
+            && !selectedTargets.isEmpty
+            && (scope == .global || projectURL != nil)
     }
 
     var body: some View {
