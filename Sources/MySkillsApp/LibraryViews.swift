@@ -354,7 +354,6 @@ struct SkillDetailView: View {
                 Text(description)
                     .font(.callout)
                     .foregroundStyle(.secondary)
-                    .lineLimit(5)
                     .fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
