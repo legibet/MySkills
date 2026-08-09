@@ -222,6 +222,7 @@ enum SkillLibrary {
 
             if isSymlink(url), !FileManager.default.fileExists(atPath: url.path) {
                 record.availabilityIssue = .missingLinkTarget
+                record.availabilityMessage = nil
                 return record
             }
 
@@ -230,12 +231,14 @@ enum SkillLibrary {
                 metadata = try validateSkill(at: url, expectedName: skillName)
             } catch {
                 record.availabilityIssue = .invalidSkill
+                record.availabilityMessage = error.localizedDescription
                 return record
             }
 
             record.displayName = metadata.name
             record.description = metadata.description
             record.availabilityIssue = nil
+            record.availabilityMessage = nil
             return record
         }
         .sorted {

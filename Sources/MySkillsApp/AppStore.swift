@@ -214,7 +214,7 @@ final class AppStore {
     func requestUpdate(_ skill: SkillRecord) async {
         do {
             guard skill.isAvailable else {
-                throw AppError.message(skill.availabilityIssue?.label ?? "This skill is unavailable.")
+                throw AppError.message(skill.unavailableMessage ?? "This skill is unavailable.")
             }
 
             if let importedHash = skill.importedHash {

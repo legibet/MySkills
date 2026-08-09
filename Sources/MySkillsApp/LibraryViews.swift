@@ -345,8 +345,8 @@ struct SkillDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 header
-                if let issue = skill.availabilityIssue {
-                    unavailableMessage(issue)
+                if let message = skill.unavailableMessage {
+                    unavailableMessage(message)
                 }
                 metadata
                 enablements
@@ -434,8 +434,8 @@ struct SkillDetailView: View {
         }
     }
 
-    private func unavailableMessage(_ issue: SkillAvailabilityIssue) -> some View {
-        Label(issue.label, systemImage: "exclamationmark.triangle.fill")
+    private func unavailableMessage(_ message: String) -> some View {
+        Label(message, systemImage: "exclamationmark.triangle.fill")
             .font(.callout)
             .foregroundStyle(.orange)
             .padding(12)

@@ -94,9 +94,14 @@ struct SkillRecord: Identifiable, Codable, Hashable {
     var installedAt: Date
     var updatedAt: Date?
     var availabilityIssue: SkillAvailabilityIssue?
+    var availabilityMessage: String?
 
     var isAvailable: Bool {
         availabilityIssue == nil
+    }
+
+    var unavailableMessage: String? {
+        availabilityMessage ?? availabilityIssue?.label
     }
 
     var canUpdate: Bool {
