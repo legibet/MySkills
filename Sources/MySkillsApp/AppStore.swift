@@ -198,13 +198,22 @@ final class AppStore {
 
     func remove(_ skill: SkillRecord) {
         do {
-            let records = enablements.filter { $0.skillName == skill.name }
+            let removedNames: Set<String>
+            if let owningLinkPath = skill.owningLinkPath {
+                removedNames = Set(
+                    skills.filter { $0.owningLinkPath == owningLinkPath }
+                        .map(\.name)
+                    )
+            } else {
+                removedNames = [skill.name]
+            }
+            let records = enablements.filter { removedNames.contains($0.skillName) }
             for record in records {
                 try SymlinkService.disable(record)
             }
-            enablements.removeAll { $0.skillName == skill.name }
+            enablements.removeAll { removedNames.contains($0.skillName) }
             try SkillLibrary.removeSkill(skill)
-            skills.removeAll { $0.name == skill.name }
+            skills.removeAll { removedNames.contains($0.name) }
             try save()
         } catch {
             report(error)
@@ -218,7 +227,7 @@ final class AppStore {
             }
 
             if let importedHash = skill.importedHash {
-                let currentHash = try FolderHash.hash(PathResolver.skillURL(skill.name))
+                let currentHash = try FolderHash.hash(PathResolver.skillURL(skill))
                 if currentHash != importedHash {
                     pendingUpdate = skill
                     return
@@ -264,7 +273,7 @@ final class AppStore {
     }
 
     func openSkill(_ skill: SkillRecord, mode: FolderOpenMode, applicationPath: String) {
-        openFolder(PathResolver.skillURL(skill.name), mode: mode, applicationPath: applicationPath)
+        openFolder(PathResolver.skillURL(skill), mode: mode, applicationPath: applicationPath)
     }
 
     func openProject(_ project: ProjectRecord, mode: FolderOpenMode, applicationPath: String) {
@@ -323,7 +332,7 @@ final class AppStore {
 
         // Hash the on-disk folder (not importedHash) so replacing local edits
         // with identical upstream content still reads as an update.
-        let previousHash = try? FolderHash.hash(PathResolver.skillURL(skill.name))
+        let previousHash = try? FolderHash.hash(PathResolver.skillURL(skill))
 
         var updated: SkillRecord
         switch skill.sourceKind {

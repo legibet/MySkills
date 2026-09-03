@@ -91,6 +91,8 @@ struct SkillRecord: Identifiable, Codable, Hashable {
     var ref: String?
     var subpath: String?
     var importedHash: String?
+    var libraryPath: String?
+    var owningLinkPath: String?
     var installedAt: Date
     var updatedAt: Date?
     var availabilityIssue: SkillAvailabilityIssue?
@@ -106,6 +108,24 @@ struct SkillRecord: Identifiable, Codable, Hashable {
 
     var canUpdate: Bool {
         sourceKind != .local && isAvailable
+    }
+
+    var libraryRelativePath: String {
+        libraryPath ?? name
+    }
+
+    var collectionName: String? {
+        guard let separator = libraryRelativePath.firstIndex(of: "/") else {
+            return nil
+        }
+        return String(libraryRelativePath[..<separator])
+    }
+
+    var linkedCollectionPath: String? {
+        guard let owningLinkPath, owningLinkPath != libraryRelativePath else {
+            return nil
+        }
+        return owningLinkPath
     }
 
     var readerRequest: SkillReaderRequest {
@@ -146,7 +166,7 @@ struct SkillRecord: Identifiable, Codable, Hashable {
                 .filter { !$0.isEmpty }
                 .joined(separator: "/")
         case .local:
-            return "Local"
+            return collectionName.map { "Local · \($0)" } ?? "Local"
         }
     }
 }
@@ -175,6 +195,7 @@ struct EnablementRecord: Identifiable, Codable, Hashable {
     var targetName: String
     var projectPath: String?
     var targetPath: String
+    var sourcePath: String?
     var createdAt: Date
 }
 

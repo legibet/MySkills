@@ -20,6 +20,16 @@ struct LibraryView: View {
         FolderOpenMode(rawValue: folderOpenModeRaw) ?? .defaultFolderApp
     }
 
+    private var removalTitle: String {
+        guard let skillToRemove else {
+            return ""
+        }
+        if let collectionPath = skillToRemove.linkedCollectionPath {
+            return "Remove collection \(collectionPath)?"
+        }
+        return "Remove \(skillToRemove.displayName)?"
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             SkillListPanel(
@@ -62,7 +72,7 @@ struct LibraryView: View {
             }
         }
         .confirmationDialog(
-            skillToRemove.map { "Remove \($0.displayName)?" } ?? "",
+            removalTitle,
             isPresented: Binding(
                 get: { skillToRemove != nil },
                 set: { if !$0 { skillToRemove = nil } },
@@ -74,8 +84,19 @@ struct LibraryView: View {
                 store.remove(skill)
             }
             Button("Cancel", role: .cancel) {}
-        } message: { _ in
-            Text("Enabled symlinks managed by MySkills will be removed too.")
+        } message: { skill in
+            if let collectionPath = skill.linkedCollectionPath {
+                let count = store.skills.count { $0.owningLinkPath == collectionPath }
+                Text(
+                    """
+                    The collection link and its \(count) library skills will be removed. \
+                    Source files will remain unchanged. Enabled symlinks managed by MySkills \
+                    will be removed too.
+                    """
+                    )
+            } else {
+                Text("Enabled symlinks managed by MySkills will be removed too.")
+            }
         }
     }
 }
@@ -454,7 +475,7 @@ struct SkillDetailView: View {
             Text("Details")
                 .font(.headline)
 
-            DetailRow(label: "Folder", value: PathResolver.skillURL(skill.name).path)
+            DetailRow(label: "Folder", value: PathResolver.skillURL(skill).path)
             DetailRow(label: "Source", value: sourceText)
 
             if let updatedAt = skill.updatedAt {

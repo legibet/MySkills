@@ -33,6 +33,10 @@ enum PathResolver {
         skillsDirectory.appendingPathComponent(name, isDirectory: true)
     }
 
+    static func skillURL(_ skill: SkillRecord) -> URL {
+        skillURL(skill.libraryRelativePath)
+    }
+
     static func expandedPath(_ path: String) -> URL {
         if path == "~" {
             return home
@@ -177,6 +181,140 @@ enum SkillsSearchClient {
     }
 }
 
+enum LibraryScanner {
+    struct Candidate {
+        let folder: URL
+        let libraryPath: String
+        let owningLinkPath: String?
+    }
+
+    struct MissingLink {
+        let libraryPath: String
+        let owningLinkPath: String
+    }
+
+    struct ScanResult {
+        var candidates: [Candidate] = []
+        var missingLinks: [MissingLink] = []
+
+        var count: Int {
+            candidates.count + missingLinks.count
+        }
+    }
+
+    static func scan(_ root: URL) throws -> ScanResult {
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: root,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles],
+            )
+        var result = ScanResult()
+
+        for entry in entries {
+            let values = try entry.resourceValues(
+                forKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                )
+            guard values.isDirectory == true || values.isSymbolicLink == true else {
+                continue
+            }
+
+            let libraryPath = entry.lastPathComponent
+            let previousCount = result.count
+            try visit(
+                entry,
+                libraryPath: libraryPath,
+                owningLinkPath: nil,
+                ancestors: [],
+                result: &result,
+                )
+
+            if result.count == previousCount {
+                let isLink = values.isSymbolicLink == true
+                result.candidates.append(
+                    Candidate(
+                        folder: isLink ? entry.resolvingSymlinksInPath() : entry,
+                        libraryPath: libraryPath,
+                        owningLinkPath: isLink ? libraryPath : nil,
+                        )
+                    )
+            }
+        }
+
+        return result
+    }
+
+    private static func visit(
+        _ url: URL,
+        libraryPath: String,
+        owningLinkPath: String?,
+        ancestors: Set<String>,
+        result: inout ScanResult,
+        ) throws {
+        let values = try url.resourceValues(
+            forKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            )
+        let isLink = values.isSymbolicLink == true
+        let owningLinkPath = owningLinkPath ?? (isLink ? libraryPath : nil)
+
+        if isLink, !FileManager.default.fileExists(atPath: url.path) {
+            result.missingLinks.append(
+                MissingLink(
+                    libraryPath: libraryPath,
+                    owningLinkPath: owningLinkPath ?? libraryPath,
+                    )
+                )
+            return
+        }
+
+        let folder = isLink ? url.resolvingSymlinksInPath() : url
+        guard (try? folder.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else {
+            return
+        }
+
+        let resolvedPath = folder.resolvingSymlinksInPath().standardizedFileURL.path
+        guard !ancestors.contains(resolvedPath) else {
+            return
+        }
+
+        if FileManager.default.fileExists(
+            atPath: folder.appendingPathComponent("SKILL.md").path
+        ) {
+            result.candidates.append(
+                Candidate(
+                    folder: folder,
+                    libraryPath: libraryPath,
+                    owningLinkPath: owningLinkPath,
+                    )
+                )
+            return
+        }
+
+        let entries = try FileManager.default.contentsOfDirectory(
+            at: folder,
+            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+            options: [.skipsHiddenFiles],
+        )
+        let ancestors = ancestors.union([resolvedPath])
+
+        for entry in entries where entry.lastPathComponent != ".git" {
+            let values = try entry.resourceValues(
+                forKeys: [.isDirectoryKey, .isSymbolicLinkKey],
+                )
+            guard values.isDirectory == true || values.isSymbolicLink == true else {
+                continue
+            }
+
+            try visit(
+                entry,
+                libraryPath: "\(libraryPath)/\(entry.lastPathComponent)",
+                owningLinkPath: owningLinkPath,
+                ancestors: ancestors,
+                result: &result,
+                )
+        }
+    }
+}
+
 enum SkillLibrary {
     struct Metadata {
         let name: String
@@ -193,57 +331,113 @@ enum SkillLibrary {
     static func scan(knownSkills: [SkillRecord]) throws -> [SkillRecord] {
         try prepare()
 
-        var known: [String: SkillRecord] = [:]
-        for skill in knownSkills {
-            known[skill.name] = skill
+        let known = Dictionary(uniqueKeysWithValues: knownSkills.map { ($0.name, $0) })
+        let scan = try LibraryScanner.scan(PathResolver.skillsDirectory)
+        var records = scan.candidates.map { makeRecord($0, known: known) }
+        for link in scan.missingLinks {
+            records.append(contentsOf: missingRecords(for: link, known: known))
         }
 
-        let entries = try FileManager.default.contentsOfDirectory(
-            at: PathResolver.skillsDirectory,
-            includingPropertiesForKeys: [.isDirectoryKey, .isSymbolicLinkKey],
-            options: [.skipsHiddenFiles],
-            )
+        return mergeDuplicates(records).sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
 
-        return entries.compactMap { url in
-            guard isDirectoryOrSymlink(url) else {
-                return nil
-            }
-
-            let skillName = url.lastPathComponent
-            var record =
-                known[skillName]
-                ?? SkillRecord(
-                    name: skillName,
-                    displayName: skillName,
+    private static func missingRecords(
+        for link: LibraryScanner.MissingLink,
+        known: [String: SkillRecord],
+        ) -> [SkillRecord] {
+        let descendants = link.libraryPath + "/"
+        let name = URL(fileURLWithPath: link.libraryPath).lastPathComponent
+        let members = known.values.filter {
+            $0.libraryRelativePath == link.libraryPath
+                || $0.libraryRelativePath.hasPrefix(descendants)
+        }
+        var records = members
+        if records.isEmpty {
+            records.append(
+                SkillRecord(
+                    name: name,
+                    displayName: name,
                     description: "",
                     sourceKind: .local,
+                    libraryPath: link.libraryPath,
+                    owningLinkPath: link.owningLinkPath,
                     installedAt: Date(),
                     )
+                )
+        }
 
-            if isSymlink(url), !FileManager.default.fileExists(atPath: url.path) {
-                record.availabilityIssue = .missingLinkTarget
-                record.availabilityMessage = nil
-                return record
+        return records.map { record in
+            var record = record
+            record.owningLinkPath = link.owningLinkPath
+            record.availabilityIssue = .missingLinkTarget
+            record.availabilityMessage = nil
+            return record
+        }
+    }
+
+    private static func mergeDuplicates(_ records: [SkillRecord]) -> [SkillRecord] {
+        Dictionary(grouping: records, by: \.name).map { name, records in
+            guard records.count > 1 else {
+                return records[0]
             }
 
-            let metadata: Metadata
-            do {
-                metadata = try validateSkill(at: url, expectedName: skillName)
-            } catch {
-                record.availabilityIssue = .invalidSkill
-                record.availabilityMessage = error.localizedDescription
-                return record
+            let records = records.sorted { lhs, rhs in
+                if (lhs.collectionName == nil) != (rhs.collectionName == nil) {
+                    return lhs.collectionName == nil
+                }
+                return lhs.libraryRelativePath < rhs.libraryRelativePath
             }
+            var record = records[0]
+            let paths = records
+                .map(\.libraryRelativePath)
+                .joined(separator: ", ")
+            record.availabilityIssue = .invalidSkill
+            record.availabilityMessage =
+                "Skill '\(name)' exists in multiple library locations: \(paths)."
+            return record
+        }
+    }
 
+    private static func makeRecord(
+        _ candidate: LibraryScanner.Candidate,
+        known: [String: SkillRecord],
+        ) -> SkillRecord {
+        let name = URL(fileURLWithPath: candidate.libraryPath).lastPathComponent
+        var record: SkillRecord
+        if let existing = known[name],
+           existing.libraryRelativePath == candidate.libraryPath
+        {
+            record = existing
+        } else {
+            record = SkillRecord(
+                name: name,
+                displayName: name,
+                description: "",
+                sourceKind: .local,
+                libraryPath: candidate.libraryPath,
+                owningLinkPath: candidate.owningLinkPath,
+                installedAt: Date(),
+                )
+        }
+        record.libraryPath = candidate.libraryPath
+        record.owningLinkPath = candidate.owningLinkPath
+
+        do {
+            let metadata = try validateSkill(
+                at: candidate.folder,
+                expectedName: name,
+                )
             record.displayName = metadata.name
             record.description = metadata.description
             record.availabilityIssue = nil
             record.availabilityMessage = nil
-            return record
+        } catch {
+            record.availabilityIssue = .invalidSkill
+            record.availabilityMessage = error.localizedDescription
         }
-        .sorted {
-            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
-        }
+        return record
     }
 
     static func installDownloadedSkill(
@@ -281,14 +475,17 @@ enum SkillLibrary {
     }
 
     static func removeSkill(_ skill: SkillRecord) throws {
-        let url = PathResolver.skillURL(skill.name)
+        let url = skill.owningLinkPath.map(PathResolver.skillURL) ?? PathResolver.skillURL(skill)
+        if skill.owningLinkPath != nil, !isSymlink(url) {
+            throw AppError.message("The linked library entry is no longer available.")
+        }
         if FileManager.default.fileExists(atPath: url.path) || isSymlink(url) {
             try FileManager.default.removeItem(at: url)
         }
     }
 
-    static func skillMarkdown(_ skillName: String) throws -> String {
-        let skillFile = PathResolver.skillURL(skillName).appendingPathComponent("SKILL.md")
+    static func skillMarkdown(_ skill: SkillRecord) throws -> String {
+        let skillFile = PathResolver.skillURL(skill).appendingPathComponent("SKILL.md")
         return try MarkdownCleaner.stripFrontmatter(String(contentsOf: skillFile, encoding: .utf8))
     }
 
@@ -520,14 +717,6 @@ enum SkillLibrary {
                 try FileManager.default.copyItem(at: entry, to: target)
             }
         }
-    }
-
-    private static func isDirectoryOrSymlink(_ url: URL) -> Bool {
-        guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isSymbolicLinkKey])
-        else {
-            return false
-        }
-        return values.isDirectory == true || values.isSymbolicLink == true
     }
 
     private static func isSymlink(_ url: URL) -> Bool {
@@ -963,12 +1152,13 @@ enum GitInstaller {
 
         return folders.sorted { $0.path < $1.path }
     }
+
 }
 
 enum SymlinkService {
     static func enable(skill: SkillRecord, scope: SkillScope, target: AgentTarget, projectURL: URL?)
     throws -> EnablementRecord {
-        let source = PathResolver.skillURL(skill.name)
+        let source = PathResolver.skillURL(skill)
         try SkillLibrary.validateSkill(at: source, expectedName: skill.name)
 
         let directory = try PathResolver.targetDirectory(
@@ -1007,21 +1197,25 @@ enum SymlinkService {
         _ enablements: [EnablementRecord],
         with skills: [SkillRecord],
         ) throws -> [EnablementRecord] {
-        let skillNames = Set(skills.map(\.name))
+        let skillsByName = Dictionary(uniqueKeysWithValues: skills.map { ($0.name, $0) })
         var valid: [EnablementRecord] = []
 
         for enablement in enablements {
             let destination = URL(fileURLWithPath: enablement.targetPath)
-            let source = PathResolver.skillURL(enablement.skillName)
+            let skill = skillsByName[enablement.skillName]
+            let source = skill.map(PathResolver.skillURL)
+                ?? enablement.sourcePath.map { URL(fileURLWithPath: $0) }
+                ?? PathResolver.skillURL(enablement.skillName)
             guard try symlink(destination, pointsTo: source) else {
                 continue
             }
 
-            if skillNames.contains(enablement.skillName) {
+            if skill != nil {
                 var record = enablement
                 if record.scope == .global {
                     record.projectPath = nil
                 }
+                record.sourcePath = source.path
                 valid.append(record)
             } else {
                 try FileManager.default.removeItem(at: destination)
@@ -1045,6 +1239,7 @@ enum SymlinkService {
             targetName: target.name,
             projectPath: projectURL?.path,
             targetPath: destination.path,
+            sourcePath: PathResolver.skillURL(skill).path,
             createdAt: Date(),
             )
     }

@@ -93,7 +93,7 @@ struct SkillReaderView: View {
     private var subtitle: String {
         switch request.kind {
         case .library:
-            return installedSkill.map { PathResolver.skillURL($0.name).path } ?? "Installed skill"
+            return installedSkill.map { PathResolver.skillURL($0).path } ?? "Installed skill"
         case .skillsSh:
             if let source = request.source {
                 return "\(source)/\(request.skillID ?? request.name)"
@@ -116,7 +116,10 @@ struct SkillReaderView: View {
         do {
             switch request.kind {
             case .library:
-                markdown = try SkillLibrary.skillMarkdown(request.name)
+                guard let installedSkill else {
+                    throw AppError.message("This skill is no longer installed.")
+                }
+                markdown = try SkillLibrary.skillMarkdown(installedSkill)
 
             case .skillsSh:
                 guard let source = request.source, let skillID = request.skillID else {
