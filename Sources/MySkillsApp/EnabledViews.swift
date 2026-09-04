@@ -223,11 +223,11 @@ extension EnablementCardHeader where Accessory == EmptyView {
 }
 
 struct EnablementGroup: Identifiable {
-    var skillName: String
+    var id: String
     var records: [EnablementRecord]
 
-    var id: String {
-        skillName
+    var skillName: String {
+        records[0].skillName
     }
 
     var targetNames: String {
@@ -235,14 +235,16 @@ struct EnablementGroup: Identifiable {
     }
 
     static func groups(from records: [EnablementRecord]) -> [EnablementGroup] {
-        Dictionary(grouping: records, by: \.skillName)
-            .map { skillName, records in
+        Dictionary(grouping: records) { $0.sourcePath ?? $0.targetPath }
+            .map { sourcePath, records in
                 EnablementGroup(
-                    skillName: skillName,
+                    id: sourcePath,
                     records: records.sorted { $0.targetName < $1.targetName },
                     )
             }
-            .sorted { $0.skillName < $1.skillName }
+            .sorted { lhs, rhs in
+                lhs.skillName == rhs.skillName ? lhs.id < rhs.id : lhs.skillName < rhs.skillName
+            }
     }
 }
 
@@ -256,7 +258,7 @@ struct EnablementRecordLine: View {
                 .font(.body.weight(.medium))
                 .lineLimit(1)
 
-            if store.skill(named: record.skillName)?.isAvailable == false {
+            if store.skill(for: record)?.isAvailable == false {
                 Label("Unavailable", systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
@@ -286,7 +288,9 @@ struct ProjectEnablementLine: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                if store.skill(named: group.skillName)?.isAvailable == false {
+                if let record = group.records.first,
+                   store.skill(for: record)?.isAvailable == false
+                {
                     Label("Unavailable", systemImage: "exclamationmark.triangle.fill")
                         .font(.caption)
                         .foregroundStyle(.orange)

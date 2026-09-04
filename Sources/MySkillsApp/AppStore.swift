@@ -29,8 +29,8 @@ final class AppStore {
     var isSearching = false
     var isInstalling = false
     var pendingUpdate: SkillRecord?
-    var updatingSkillNames: Set<String> = []
-    var updateOutcomes: [String: UpdateOutcome] = [:]
+    var updatingSkillIDs: Set<SkillRecord.ID> = []
+    var updateOutcomes: [SkillRecord.ID: UpdateOutcome] = [:]
 
     var targets: [AgentTarget] {
         AgentTarget.builtins + customTargets
@@ -198,22 +198,24 @@ final class AppStore {
 
     func remove(_ skill: SkillRecord) {
         do {
-            let removedNames: Set<String>
-            if let owningLinkPath = skill.owningLinkPath {
-                removedNames = Set(
-                    skills.filter { $0.owningLinkPath == owningLinkPath }
-                        .map(\.name)
-                    )
-            } else {
-                removedNames = [skill.name]
+            let removedSkills = skill.owningLinkPath.map { owningLinkPath in
+                skills.filter { $0.owningLinkPath == owningLinkPath }
+            } ?? [skill]
+            let removedIDs = Set(removedSkills.map(\.id))
+            let removedSourcePaths = Set(
+                removedSkills.map { PathResolver.skillURL($0).standardizedFileURL.path },
+                )
+            let records = enablements.filter {
+                $0.sourcePath.map(removedSourcePaths.contains) == true
             }
-            let records = enablements.filter { removedNames.contains($0.skillName) }
             for record in records {
                 try SymlinkService.disable(record)
             }
-            enablements.removeAll { removedNames.contains($0.skillName) }
+            enablements.removeAll { record in
+                record.sourcePath.map(removedSourcePaths.contains) == true
+            }
             try SkillLibrary.removeSkill(skill)
-            skills.removeAll { removedNames.contains($0.name) }
+            skills.removeAll { removedIDs.contains($0.id) }
             try save()
         } catch {
             report(error)
@@ -304,13 +306,19 @@ final class AppStore {
     }
 
     func enablements(for skill: SkillRecord) -> [EnablementRecord] {
-        enablements
-            .filter { $0.skillName == skill.name }
+        let sourcePath = PathResolver.skillURL(skill).standardizedFileURL.path
+        return enablements
+            .filter { $0.sourcePath == sourcePath }
             .sorted { $0.targetPath < $1.targetPath }
     }
 
-    func skill(named name: String) -> SkillRecord? {
-        skills.first { $0.name == name }
+    func skill(for enablement: EnablementRecord) -> SkillRecord? {
+        guard let sourcePath = enablement.sourcePath else {
+            return nil
+        }
+        return skills.first {
+            PathResolver.skillURL($0).standardizedFileURL.path == sourcePath
+        }
     }
 
     func enablements(for project: ProjectRecord) -> [EnablementRecord] {
@@ -326,9 +334,9 @@ final class AppStore {
     }
 
     private func update(_ skill: SkillRecord) async throws {
-        withAnimation { updateOutcomes[skill.name] = nil }
-        updatingSkillNames.insert(skill.name)
-        defer { updatingSkillNames.remove(skill.name) }
+        withAnimation { updateOutcomes[skill.id] = nil }
+        updatingSkillIDs.insert(skill.id)
+        defer { updatingSkillIDs.remove(skill.id) }
 
         // Hash the on-disk folder (not importedHash) so replacing local edits
         // with identical upstream content still reads as an update.
@@ -351,7 +359,7 @@ final class AppStore {
             updated = try SkillLibrary.installDownloadedSkill(
                 result: result,
                 response: response,
-                replacing: skill.name,
+                replacing: skill,
                 )
 
         case .git:
@@ -373,7 +381,7 @@ final class AppStore {
                 subpath: skill.subpath,
                 )
             updated = try await Task.detached {
-                try GitInstaller.install(result, replacing: skill.name)
+                try GitInstaller.install(result, replacing: skill)
             }.value
 
         case .local:
@@ -390,10 +398,10 @@ final class AppStore {
             outcome = .updated
         }
 
-        withAnimation { updateOutcomes[skill.name] = outcome }
+        withAnimation { updateOutcomes[skill.id] = outcome }
         Task {
             try? await Task.sleep(for: .seconds(4))
-            withAnimation { updateOutcomes[skill.name] = nil }
+            withAnimation { updateOutcomes[skill.id] = nil }
         }
     }
 
@@ -406,9 +414,12 @@ final class AppStore {
     }
 
     private func upsert(_ skill: SkillRecord) {
-        skills.removeAll { $0.name == skill.name }
+        skills.removeAll { $0.id == skill.id }
         skills.append(skill)
-        skills.sort { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        skills.sort { lhs, rhs in
+            let order = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
+            return order == .orderedSame ? lhs.id < rhs.id : order == .orderedAscending
+        }
     }
 
     private func upsert(_ project: ProjectRecord) {

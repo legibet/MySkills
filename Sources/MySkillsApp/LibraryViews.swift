@@ -6,14 +6,14 @@ struct LibraryView: View {
     @Bindable var store: AppStore
     @AppStorage("folderOpenMode") private var folderOpenModeRaw = FolderOpenMode.defaultFolderApp.rawValue
     @AppStorage("selectedOpenApplicationPath") private var selectedOpenApplicationPath = ""
-    @State private var selectedSkillName: String?
+    @State private var selectedSkillID: SkillRecord.ID?
     @State private var skillToRemove: SkillRecord?
 
     private var selectedSkill: SkillRecord? {
-        guard let selectedSkillName else {
+        guard let selectedSkillID else {
             return store.skills.first
         }
-        return store.skills.first { $0.name == selectedSkillName }
+        return store.skills.first { $0.id == selectedSkillID }
     }
 
     private var folderOpenMode: FolderOpenMode {
@@ -34,7 +34,7 @@ struct LibraryView: View {
         HStack(spacing: 0) {
             SkillListPanel(
                 store: store,
-                selectedSkillName: $selectedSkillName,
+                selectedSkillID: $selectedSkillID,
                 folderOpenMode: folderOpenMode,
                 selectedOpenApplicationPath: selectedOpenApplicationPath,
                 openReader: { skill in
@@ -67,8 +67,8 @@ struct LibraryView: View {
         }
         .navigationTitle("Library")
         .onChange(of: store.skills, initial: true) { _, skills in
-            if selectedSkillName == nil || !skills.contains(where: { $0.name == selectedSkillName }) {
-                selectedSkillName = skills.first?.name
+            if selectedSkillID == nil || !skills.contains(where: { $0.id == selectedSkillID }) {
+                selectedSkillID = skills.first?.id
             }
         }
         .confirmationDialog(
@@ -103,14 +103,14 @@ struct LibraryView: View {
 
 struct SkillListPanel: View {
     @Bindable var store: AppStore
-    @Binding var selectedSkillName: String?
+    @Binding var selectedSkillID: SkillRecord.ID?
     var folderOpenMode: FolderOpenMode
     var selectedOpenApplicationPath: String
     var openReader: (SkillRecord) -> Void
     var requestRemove: (SkillRecord) -> Void
 
     @State private var searchText = ""
-    @State private var highlighted: String?
+    @State private var highlighted: SkillRecord.ID?
     @State private var detailSyncTask: Task<Void, Never>?
     @FocusState private var isListFocused: Bool
 
@@ -183,27 +183,27 @@ struct SkillListPanel: View {
                             ForEach(filteredSkills) { skill in
                                 SkillListRow(
                                     skill: skill,
-                                    isSelected: highlighted == skill.name,
+                                    isSelected: highlighted == skill.id,
                                     select: {
                                         detailSyncTask?.cancel()
-                                        highlighted = skill.name
-                                        selectedSkillName = skill.name
+                                        highlighted = skill.id
+                                        selectedSkillID = skill.id
                                         isListFocused = true
                                     },
                                     open: {
                                         guard skill.isAvailable else { return }
                                         detailSyncTask?.cancel()
-                                        highlighted = skill.name
-                                        selectedSkillName = skill.name
+                                        highlighted = skill.id
+                                        selectedSkillID = skill.id
                                         openReader(skill)
                                     },
                                     )
-                                .id(skill.name)
+                                .id(skill.id)
                                 .contextMenu {
                                     Button("Read") {
                                         detailSyncTask?.cancel()
-                                        highlighted = skill.name
-                                        selectedSkillName = skill.name
+                                        highlighted = skill.id
+                                        selectedSkillID = skill.id
                                         openReader(skill)
                                     }
                                     .disabled(!skill.isAvailable)
@@ -248,13 +248,13 @@ struct SkillListPanel: View {
                     .onKeyPress(.return) {
                         openSelectedSkill()
                     }
-                    .onChange(of: selectedSkillName) { _, newValue in
+                    .onChange(of: selectedSkillID) { _, newValue in
                         if highlighted != newValue {
                             highlighted = newValue
                         }
                     }
                     .onAppear {
-                        highlighted = selectedSkillName
+                        highlighted = selectedSkillID
                     }
                 }
             }
@@ -267,7 +267,7 @@ struct SkillListPanel: View {
             return .ignored
         }
 
-        let currentIndex = filteredSkills.firstIndex { $0.name == highlighted }
+        let currentIndex = filteredSkills.firstIndex { $0.id == highlighted }
         let nextIndex: Int
         if let currentIndex {
             nextIndex = min(max(currentIndex + direction, 0), filteredSkills.count - 1)
@@ -276,26 +276,26 @@ struct SkillListPanel: View {
         }
 
         let skill = filteredSkills[nextIndex]
-        highlighted = skill.name
-        proxy.scrollTo(skill.name, anchor: .center)
-        scheduleDetailSync(skill.name)
+        highlighted = skill.id
+        proxy.scrollTo(skill.id, anchor: .center)
+        scheduleDetailSync(skill.id)
         return .handled
     }
 
     // Update the highlight instantly but debounce the detail pane refresh,
     // so holding an arrow key scrolls the list smoothly instead of rebuilding
     // SkillDetailView on every key repeat.
-    private func scheduleDetailSync(_ name: String?) {
+    private func scheduleDetailSync(_ id: SkillRecord.ID?) {
         detailSyncTask?.cancel()
         detailSyncTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(140))
             guard !Task.isCancelled else { return }
-            selectedSkillName = name
+            selectedSkillID = id
         }
     }
 
     private func openSelectedSkill() -> KeyPress.Result {
-        guard let skill = filteredSkills.first(where: { $0.name == highlighted }),
+        guard let skill = filteredSkills.first(where: { $0.id == highlighted }),
               skill.isAvailable
         else {
             return .ignored
@@ -423,7 +423,7 @@ struct SkillDetailView: View {
                     Label("Update", systemImage: "arrow.down.circle")
                 }
                 .keyboardShortcut("u", modifiers: [.command])
-                .disabled(!skill.canUpdate || store.updatingSkillNames.contains(skill.name))
+                .disabled(!skill.canUpdate || store.updatingSkillIDs.contains(skill.id))
 
                 Button {
                     if let url = skill.sourceWebURL {
@@ -440,11 +440,11 @@ struct SkillDetailView: View {
                     Label("Remove", systemImage: "trash")
                 }
 
-                if store.updatingSkillNames.contains(skill.name) {
+                if store.updatingSkillIDs.contains(skill.id) {
                     ProgressView()
                         .controlSize(.small)
                         .padding(.leading, 4)
-                } else if let outcome = store.updateOutcomes[skill.name] {
+                } else if let outcome = store.updateOutcomes[skill.id] {
                     Text(outcome.label)
                         .font(.callout)
                         .foregroundStyle(.secondary)
@@ -566,7 +566,9 @@ struct EnableSheet: View {
     }
 
     private var selectedTargets: Set<AgentTarget> {
-        Set(availableTargets.filter { selectedTargetIDs.contains($0.id) && !isEnabled($0) })
+        Set(availableTargets.filter {
+            selectedTargetIDs.contains($0.id) && enablement(for: $0) == nil
+        })
     }
 
     private var canEnable: Bool {
@@ -670,7 +672,7 @@ struct EnableSheet: View {
                             .foregroundStyle(.secondary)
                     }
                 }
-                .disabled(isEnabled(target))
+                .disabled(enablement(for: target) != nil)
             }
         }
     }
@@ -688,7 +690,7 @@ struct EnableSheet: View {
         Binding(
             get: { isEnabled(target) || selectedTargetIDs.contains(target.id) },
             set: { enabled in
-                guard !isEnabled(target) else {
+                guard enablement(for: target) == nil else {
                     return
                 }
 
@@ -702,7 +704,12 @@ struct EnableSheet: View {
     }
 
     private func isEnabled(_ target: AgentTarget) -> Bool {
-        store.enablements.contains { record in
+        enablement(for: target)?.sourcePath
+            == PathResolver.skillURL(skill).standardizedFileURL.path
+    }
+
+    private func enablement(for target: AgentTarget) -> EnablementRecord? {
+        store.enablements.first { record in
             record.skillName == skill.name
                 && record.scope == scope
                 && record.targetID == target.id

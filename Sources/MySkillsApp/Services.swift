@@ -29,8 +29,8 @@ enum PathResolver {
         root.appendingPathComponent("state.json")
     }
 
-    static func skillURL(_ name: String) -> URL {
-        skillsDirectory.appendingPathComponent(name, isDirectory: true)
+    static func skillURL(_ libraryPath: String) -> URL {
+        skillsDirectory.appendingPathComponent(libraryPath, isDirectory: true)
     }
 
     static func skillURL(_ skill: SkillRecord) -> URL {
@@ -331,15 +331,20 @@ enum SkillLibrary {
     static func scan(knownSkills: [SkillRecord]) throws -> [SkillRecord] {
         try prepare()
 
-        let known = Dictionary(uniqueKeysWithValues: knownSkills.map { ($0.name, $0) })
+        let known = Dictionary(
+            uniqueKeysWithValues: knownSkills.map { ($0.libraryRelativePath, $0) },
+            )
         let scan = try LibraryScanner.scan(PathResolver.skillsDirectory)
         var records = scan.candidates.map { makeRecord($0, known: known) }
         for link in scan.missingLinks {
             records.append(contentsOf: missingRecords(for: link, known: known))
         }
 
-        return mergeDuplicates(records).sorted {
-            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        return records.sorted { lhs, rhs in
+            let order = lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName)
+            return order == .orderedSame
+                ? lhs.libraryRelativePath < rhs.libraryRelativePath
+                : order == .orderedAscending
         }
     }
 
@@ -349,11 +354,10 @@ enum SkillLibrary {
         ) -> [SkillRecord] {
         let descendants = link.libraryPath + "/"
         let name = URL(fileURLWithPath: link.libraryPath).lastPathComponent
-        let members = known.values.filter {
+        var records = known.values.filter {
             $0.libraryRelativePath == link.libraryPath
                 || $0.libraryRelativePath.hasPrefix(descendants)
         }
-        var records = members
         if records.isEmpty {
             records.append(
                 SkillRecord(
@@ -377,50 +381,19 @@ enum SkillLibrary {
         }
     }
 
-    private static func mergeDuplicates(_ records: [SkillRecord]) -> [SkillRecord] {
-        Dictionary(grouping: records, by: \.name).map { name, records in
-            guard records.count > 1 else {
-                return records[0]
-            }
-
-            let records = records.sorted { lhs, rhs in
-                if (lhs.collectionName == nil) != (rhs.collectionName == nil) {
-                    return lhs.collectionName == nil
-                }
-                return lhs.libraryRelativePath < rhs.libraryRelativePath
-            }
-            var record = records[0]
-            let paths = records
-                .map(\.libraryRelativePath)
-                .joined(separator: ", ")
-            record.availabilityIssue = .invalidSkill
-            record.availabilityMessage =
-                "Skill '\(name)' exists in multiple library locations: \(paths)."
-            return record
-        }
-    }
-
     private static func makeRecord(
         _ candidate: LibraryScanner.Candidate,
         known: [String: SkillRecord],
         ) -> SkillRecord {
         let name = URL(fileURLWithPath: candidate.libraryPath).lastPathComponent
-        var record: SkillRecord
-        if let existing = known[name],
-           existing.libraryRelativePath == candidate.libraryPath
-        {
-            record = existing
-        } else {
-            record = SkillRecord(
+        var record = known[candidate.libraryPath]
+            ?? SkillRecord(
                 name: name,
                 displayName: name,
                 description: "",
                 sourceKind: .local,
-                libraryPath: candidate.libraryPath,
-                owningLinkPath: candidate.owningLinkPath,
                 installedAt: Date(),
                 )
-        }
         record.libraryPath = candidate.libraryPath
         record.owningLinkPath = candidate.owningLinkPath
 
@@ -443,9 +416,9 @@ enum SkillLibrary {
     static func installDownloadedSkill(
         result: SkillSearchResult,
         response: SkillsSearchClient.DownloadResponse,
-        replacing installedName: String? = nil,
+        replacing skill: SkillRecord? = nil,
         ) throws -> SkillRecord {
-        let installed = try installPreparedSkill(replacing: installedName) { stagingURL in
+        let installed = try installPreparedSkill(replacing: skill) { stagingURL in
             try writeFiles(response.files, to: stagingURL)
         }
 
@@ -457,6 +430,8 @@ enum SkillLibrary {
             source: result.source,
             skillId: result.resolvedSkillID,
             importedHash: installed.hash,
+            libraryPath: skill?.libraryRelativePath,
+            owningLinkPath: skill?.owningLinkPath,
             installedAt: Date(),
             updatedAt: Date(),
             )
@@ -491,9 +466,9 @@ enum SkillLibrary {
 
     static func installSkillDirectory(
         from source: URL,
-        replacing installedName: String? = nil,
+        replacing skill: SkillRecord? = nil,
         ) throws -> (metadata: Metadata, hash: String) {
-        try installPreparedSkill(replacing: installedName) { stagingURL in
+        try installPreparedSkill(replacing: skill) { stagingURL in
             try copyContents(from: source, to: stagingURL)
         }
     }
@@ -602,7 +577,7 @@ enum SkillLibrary {
     }
 
     private static func installPreparedSkill(
-        replacing installedName: String?,
+        replacing skill: SkillRecord?,
         populate: (URL) throws -> Void,
         ) throws -> (metadata: Metadata, hash: String) {
         try prepare()
@@ -616,15 +591,15 @@ enum SkillLibrary {
         }
 
         try populate(stagingURL)
-        let metadata = try validateSkill(at: stagingURL, expectedName: installedName)
+        let metadata = try validateSkill(at: stagingURL, expectedName: skill?.name)
         let hash = try FolderHash.hash(stagingURL)
-        let destination = PathResolver.skillURL(metadata.name)
+        let destination = skill.map(PathResolver.skillURL) ?? PathResolver.skillURL(metadata.name)
         let destinationExists =
             fileManager.fileExists(atPath: destination.path) || isSymlink(destination)
 
-        if installedName == nil {
+        if skill == nil {
             guard !destinationExists else {
-                throw AppError.message("The name \(metadata.name) is already in use.")
+                throw AppError.message("\(destination.path) already exists.")
             }
             try fileManager.moveItem(at: stagingURL, to: destination)
         } else {
@@ -874,7 +849,7 @@ enum GitInstaller {
 
     static func install(
         _ result: SkillSearchResult,
-        replacing installedName: String? = nil,
+        replacing skill: SkillRecord? = nil,
         ) throws -> SkillRecord {
         guard result.searchSource == .git, let gitURL = result.gitURL else {
             throw AppError.message("This result is missing Git source metadata.")
@@ -902,7 +877,7 @@ enum GitInstaller {
 
         let installed = try SkillLibrary.installSkillDirectory(
             from: folder,
-            replacing: installedName,
+            replacing: skill,
             )
 
         return SkillRecord(
@@ -915,6 +890,8 @@ enum GitInstaller {
             ref: result.ref,
             subpath: result.subpath,
             importedHash: installed.hash,
+            libraryPath: skill?.libraryRelativePath,
+            owningLinkPath: skill?.owningLinkPath,
             installedAt: Date(),
             updatedAt: Date(),
             )
@@ -1152,7 +1129,6 @@ enum GitInstaller {
 
         return folders.sorted { $0.path < $1.path }
     }
-
 }
 
 enum SymlinkService {
@@ -1169,16 +1145,13 @@ enum SymlinkService {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
         if FileManager.default.fileExists(atPath: destination.path) || isSymlink(destination) {
-            if try symlink(destination, pointsTo: source) {
-                return makeRecord(
-                    skill: skill, scope: scope, target: target, projectURL: projectURL,
-                    destination: destination,
-                    )
+            guard try symlinkTarget(destination)?.path == source.standardizedFileURL.path else {
+                throw AppError.message("\(destination.path) already exists.")
             }
-            throw AppError.message("\(destination.path) already exists.")
+        } else {
+            try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: source)
         }
 
-        try FileManager.default.createSymbolicLink(at: destination, withDestinationURL: source)
         return makeRecord(
             skill: skill, scope: scope, target: target, projectURL: projectURL,
             destination: destination,
@@ -1197,29 +1170,33 @@ enum SymlinkService {
         _ enablements: [EnablementRecord],
         with skills: [SkillRecord],
         ) throws -> [EnablementRecord] {
-        let skillsByName = Dictionary(uniqueKeysWithValues: skills.map { ($0.name, $0) })
+        let sourcePaths = Set(
+            skills.map { PathResolver.skillURL($0).standardizedFileURL.path },
+            )
         var valid: [EnablementRecord] = []
 
-        for enablement in enablements {
+        for var enablement in enablements {
             let destination = URL(fileURLWithPath: enablement.targetPath)
-            let skill = skillsByName[enablement.skillName]
-            let source = skill.map(PathResolver.skillURL)
-                ?? enablement.sourcePath.map { URL(fileURLWithPath: $0) }
-                ?? PathResolver.skillURL(enablement.skillName)
-            guard try symlink(destination, pointsTo: source) else {
+            guard let source = try symlinkTarget(destination) else {
                 continue
             }
 
-            if skill != nil {
-                var record = enablement
-                if record.scope == .global {
-                    record.projectPath = nil
-                }
-                record.sourcePath = source.path
-                valid.append(record)
-            } else {
-                try FileManager.default.removeItem(at: destination)
+            if let recordedSourcePath = enablement.sourcePath,
+               URL(fileURLWithPath: recordedSourcePath).standardizedFileURL.path != source.path
+            {
+                continue
             }
+
+            guard sourcePaths.contains(source.path) else {
+                try FileManager.default.removeItem(at: destination)
+                continue
+            }
+
+            if enablement.scope == .global {
+                enablement.projectPath = nil
+            }
+            enablement.sourcePath = source.path
+            valid.append(enablement)
         }
 
         return valid
@@ -1239,7 +1216,7 @@ enum SymlinkService {
             targetName: target.name,
             projectPath: projectURL?.path,
             targetPath: destination.path,
-            sourcePath: PathResolver.skillURL(skill).path,
+            sourcePath: PathResolver.skillURL(skill).standardizedFileURL.path,
             createdAt: Date(),
             )
     }
@@ -1248,17 +1225,14 @@ enum SymlinkService {
         (try? url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink) == true
     }
 
-    private static func symlink(_ link: URL, pointsTo source: URL) throws -> Bool {
+    private static func symlinkTarget(_ link: URL) throws -> URL? {
         guard isSymlink(link) else {
-            return false
+            return nil
         }
 
-        let rawTarget = try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
-        let targetURL = URL(
-            fileURLWithPath: rawTarget, relativeTo: link.deletingLastPathComponent(),
-            )
-        .standardizedFileURL
-        return targetURL.path == source.standardizedFileURL.path
+        let target = try FileManager.default.destinationOfSymbolicLink(atPath: link.path)
+        return URL(fileURLWithPath: target, relativeTo: link.deletingLastPathComponent())
+            .standardizedFileURL
     }
 }
 

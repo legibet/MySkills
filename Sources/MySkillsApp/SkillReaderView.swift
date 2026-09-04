@@ -12,7 +12,10 @@ struct SkillReaderView: View {
     @State private var showingEnableSheet = false
 
     private var installedSkill: SkillRecord? {
-        store.skills.first { $0.name == request.name }
+        guard let libraryPath = request.libraryPath else {
+            return nil
+        }
+        return store.skills.first { $0.libraryRelativePath == libraryPath }
     }
 
     private var folderOpenMode: FolderOpenMode {

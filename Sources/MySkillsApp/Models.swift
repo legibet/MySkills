@@ -77,7 +77,7 @@ enum FolderOpenMode: String, CaseIterable, Identifiable {
 
 struct SkillRecord: Identifiable, Codable, Hashable {
     var id: String {
-        name
+        libraryRelativePath
     }
 
     var name: String
@@ -133,6 +133,7 @@ struct SkillRecord: Identifiable, Codable, Hashable {
             kind: .library,
             name: name,
             displayName: displayName,
+            libraryPath: libraryRelativePath,
             )
     }
 
@@ -186,7 +187,7 @@ struct ProjectRecord: Identifiable, Codable, Hashable {
 
 struct EnablementRecord: Identifiable, Codable, Hashable {
     var id: String {
-        "\(skillName)|\(targetPath)"
+        targetPath
     }
 
     var skillName: String
@@ -381,6 +382,7 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
     var kind: SkillReaderKind
     var name: String
     var displayName: String
+    var libraryPath: String?
     var source: String?
     var skillID: String?
     var sourceInput: String?
@@ -392,7 +394,7 @@ struct SkillReaderRequest: Identifiable, Codable, Hashable {
     var id: String {
         switch kind {
         case .library:
-            "library:\(name)"
+            "library:\(libraryPath ?? name)"
         case .skillsSh:
             "skillsSh:\(source ?? ""):\(skillID ?? name)"
         case .git:
