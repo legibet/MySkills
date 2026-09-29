@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @Bindable var store: AppStore
     @SceneStorage("selectedSection") private var selectedSection = MainSection.library.rawValue
+    @State private var isImportingFolder = false
 
     var body: some View {
         NavigationSplitView {
@@ -29,6 +30,13 @@ struct ContentView: View {
         } detail: {
             detailView
         }
+        .fileImporter(isPresented: $isImportingFolder, allowedContentTypes: [.folder]) { result in
+            if case let .success(url) = result {
+                store.importLocalFolder(url)
+            }
+        }
+        .fileDialogMessage("Choose a skill folder that contains SKILL.md")
+        .focusedSceneValue(\.isImportingFolder, $isImportingFolder)
         .alert("Error", isPresented: errorBinding) {
             Button("OK", role: .cancel) {
                 store.errorMessage = nil
@@ -62,7 +70,7 @@ struct ContentView: View {
     private var detailView: some View {
         switch MainSection(rawValue: selectedSection) ?? .library {
         case .library:
-            LibraryView(store: store)
+            LibraryView(store: store, importFolder: { isImportingFolder = true })
         case .discover:
             DiscoverView(store: store)
         case .enabled:

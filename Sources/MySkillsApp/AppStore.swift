@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 import Observation
 import SwiftUI
@@ -119,17 +118,7 @@ final class AppStore {
         }
     }
 
-    func importLocalFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a skill folder that contains SKILL.md"
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
+    func importLocalFolder(_ url: URL) {
         do {
             let skill = try SkillLibrary.importLocalFolder(url)
             upsert(skill)
@@ -406,10 +395,12 @@ final class AppStore {
     }
 
     private func openFolder(_ url: URL, mode: FolderOpenMode, applicationPath: String) {
-        do {
-            try OpenActionService.openFolder(url, mode: mode, applicationPath: applicationPath)
-        } catch {
-            report(error)
+        Task {
+            do {
+                try await OpenActionService.openFolder(url, mode: mode, applicationPath: applicationPath)
+            } catch {
+                report(error)
+            }
         }
     }
 

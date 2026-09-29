@@ -1,3 +1,4 @@
+import AppKit
 import CryptoKit
 import Foundation
 import Yams
@@ -776,23 +777,18 @@ enum ProcessRunner {
         process.standardError = pipe
 
         try process.run()
-        process.waitUntilExit()
 
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let output = String(data: data, encoding: .utf8) ?? ""
+        // Drain the pipe before waiting: a child that fills the pipe buffer
+        // blocks until someone reads, so waiting first can deadlock.
+        let data = try pipe.fileHandleForReading.readToEnd() ?? Data()
+        process.waitUntilExit()
+        let output = String(decoding: data, as: UTF8.self)
 
         guard process.terminationStatus == 0 else {
             throw AppError.message(output.trimmingCharacters(in: .whitespacesAndNewlines))
         }
 
         return output
-    }
-
-    static func runDetached(_ executable: String, _ arguments: [String]) throws {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        try process.run()
     }
 }
 
@@ -1237,21 +1233,30 @@ enum SymlinkService {
 }
 
 enum OpenActionService {
-    static func openFolder(_ url: URL, mode: FolderOpenMode, applicationPath: String) throws {
+    static func openFolder(_ url: URL, mode: FolderOpenMode, applicationPath: String) async throws {
         switch mode {
         case .defaultFolderApp:
-            try ProcessRunner.runDetached("/usr/bin/open", [url.path])
+            try openURL(url)
         case .finder:
-            try ProcessRunner.runDetached("/usr/bin/open", ["-a", "Finder", url.path])
+            guard let finder = NSWorkspace.shared.urlForApplication(withBundleIdentifier: "com.apple.finder") else {
+                throw AppError.message("Finder could not be found.")
+            }
+            try await open(url, with: finder)
         case .selectedApplication:
             guard !applicationPath.isEmpty else {
                 throw AppError.message("Choose an application in Settings first.")
             }
-            try ProcessRunner.runDetached("/usr/bin/open", ["-a", applicationPath, url.path])
+            try await open(url, with: URL(fileURLWithPath: applicationPath))
         }
     }
 
     static func openURL(_ url: URL) throws {
-        try ProcessRunner.runDetached("/usr/bin/open", [url.absoluteString])
+        guard NSWorkspace.shared.open(url) else {
+            throw AppError.message("Could not open \(url.isFileURL ? url.path : url.absoluteString).")
+        }
+    }
+
+    private static func open(_ url: URL, with application: URL) async throws {
+        _ = try await NSWorkspace.shared.open([url], withApplicationAt: application, configuration: .init())
     }
 }

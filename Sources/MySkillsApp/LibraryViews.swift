@@ -1,9 +1,9 @@
-import AppKit
 import SwiftUI
 
 struct LibraryView: View {
     @Environment(\.openWindow) private var openWindow
     @Bindable var store: AppStore
+    var importFolder: () -> Void
     @AppStorage("folderOpenMode") private var folderOpenModeRaw = FolderOpenMode.defaultFolderApp.rawValue
     @AppStorage("selectedOpenApplicationPath") private var selectedOpenApplicationPath = ""
     @State private var selectedSkillID: SkillRecord.ID?
@@ -41,6 +41,7 @@ struct LibraryView: View {
                     openWindow(id: "reader", value: skill.readerRequest)
                 },
                 requestRemove: { skillToRemove = $0 },
+                importFolder: importFolder,
                 )
             .frame(width: 320)
 
@@ -108,6 +109,7 @@ struct SkillListPanel: View {
     var selectedOpenApplicationPath: String
     var openReader: (SkillRecord) -> Void
     var requestRemove: (SkillRecord) -> Void
+    var importFolder: () -> Void
 
     @State private var searchText = ""
     @State private var highlighted: SkillRecord.ID?
@@ -141,7 +143,7 @@ struct SkillListPanel: View {
                 Spacer()
 
                 Button {
-                    store.importLocalFolder()
+                    importFolder()
                 } label: {
                     Label("Import Folder", systemImage: "folder.badge.plus")
                 }
@@ -170,7 +172,7 @@ struct SkillListPanel: View {
                     Text("Install from Discover or import a local skill folder.")
                 } actions: {
                     Button {
-                        store.importLocalFolder()
+                        importFolder()
                     } label: {
                         Label("Import Folder", systemImage: "folder.badge.plus")
                     }
@@ -558,6 +560,7 @@ struct EnableSheet: View {
     @State private var scope = SkillScope.project
     @State private var projectURL: URL?
     @State private var selectedTargetIDs: Set<String> = []
+    @State private var isChoosingProject = false
 
     private var availableTargets: [AgentTarget] {
         store.targets.filter { target in
@@ -626,6 +629,12 @@ struct EnableSheet: View {
         .onChange(of: projectURL) { _, _ in
             selectedTargetIDs = []
         }
+        .fileImporter(isPresented: $isChoosingProject, allowedContentTypes: [.folder]) { result in
+            if case let .success(url) = result {
+                projectURL = url
+            }
+        }
+        .fileDialogMessage("Choose a project folder")
     }
 
     private var projectPicker: some View {
@@ -641,7 +650,7 @@ struct EnableSheet: View {
                 Spacer()
 
                 Button {
-                    chooseProject()
+                    isChoosingProject = true
                 } label: {
                     Label("Choose", systemImage: "folder.badge.plus")
                 }
@@ -723,18 +732,6 @@ struct EnableSheet: View {
             target.projectRelativePath ?? ""
         case .global:
             target.globalPath ?? ""
-        }
-    }
-
-    private func chooseProject() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a project folder"
-
-        if panel.runModal() == .OK {
-            projectURL = panel.url
         }
     }
 }

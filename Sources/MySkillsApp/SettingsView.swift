@@ -6,6 +6,7 @@ struct SettingsView: View {
     @AppStorage("folderOpenMode") private var folderOpenModeRaw = FolderOpenMode.defaultFolderApp.rawValue
     @AppStorage("selectedOpenApplicationPath") private var selectedOpenApplicationPath = ""
     @State private var isAddingTarget = false
+    @State private var isChoosingApplication = false
 
     private var folderOpenMode: FolderOpenMode {
         FolderOpenMode(rawValue: folderOpenModeRaw) ?? .defaultFolderApp
@@ -28,7 +29,7 @@ struct SettingsView: View {
                         }
 
                         Button("Choose…") {
-                            chooseApplication()
+                            isChoosingApplication = true
                         }
                     }
                 }
@@ -65,6 +66,14 @@ struct SettingsView: View {
         .sheet(isPresented: $isAddingTarget) {
             AddTargetSheet(store: store)
         }
+        .fileImporter(isPresented: $isChoosingApplication, allowedContentTypes: [.applicationBundle]) { result in
+            if case let .success(url) = result {
+                selectedOpenApplicationPath = url.path
+                folderOpenModeRaw = FolderOpenMode.selectedApplication.rawValue
+            }
+        }
+        .fileDialogDefaultDirectory(URL(fileURLWithPath: "/Applications", isDirectory: true))
+        .fileDialogMessage("Choose an application for opening folders")
     }
 
     private var modeDescription: String {
@@ -85,23 +94,6 @@ struct SettingsView: View {
         return URL(fileURLWithPath: selectedOpenApplicationPath)
             .deletingPathExtension()
             .lastPathComponent
-    }
-
-    private func chooseApplication() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: "/Applications", isDirectory: true)
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.message = "Choose an application for opening folders"
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
-        selectedOpenApplicationPath = url.path
-        folderOpenModeRaw = FolderOpenMode.selectedApplication.rawValue
     }
 }
 
@@ -143,6 +135,7 @@ struct AddTargetSheet: View {
     @State private var globalPath = ""
     @State private var projectRelativePath = ""
     @State private var errorMessage: String?
+    @State private var isChoosingGlobalPath = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -164,7 +157,7 @@ struct AddTargetSheet: View {
                     TextField("~/.myagent/skills", text: $globalPath)
                         .textFieldStyle(.roundedBorder)
                     Button("Choose…") {
-                        chooseGlobalPath()
+                        isChoosingGlobalPath = true
                     }
                 }
             }
@@ -196,6 +189,12 @@ struct AddTargetSheet: View {
         }
         .padding(24)
         .frame(width: 440)
+        .fileImporter(isPresented: $isChoosingGlobalPath, allowedContentTypes: [.folder]) { result in
+            if case let .success(url) = result {
+                globalPath = url.path
+            }
+        }
+        .fileDialogMessage("Choose a global skills folder")
     }
 
     @ViewBuilder
@@ -228,18 +227,6 @@ struct AddTargetSheet: View {
             dismiss()
         } catch {
             errorMessage = error.localizedDescription
-        }
-    }
-
-    private func chooseGlobalPath() {
-        let panel = NSOpenPanel()
-        panel.canChooseDirectories = true
-        panel.canChooseFiles = false
-        panel.allowsMultipleSelection = false
-        panel.message = "Choose a global skills folder"
-
-        if panel.runModal() == .OK, let url = panel.url {
-            globalPath = url.path
         }
     }
 }

@@ -1,16 +1,7 @@
-import AppKit
 import SwiftUI
-
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    func applicationDidFinishLaunching(_: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-}
 
 @main
 struct MySkillsApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @State private var store = AppStore()
 
     var body: some Scene {
@@ -24,17 +15,7 @@ struct MySkillsApp: App {
         .defaultSize(width: 1040, height: 720)
         .windowToolbarStyle(.unified)
         .commands {
-            CommandGroup(after: .newItem) {
-                Button("Import Folder…") {
-                    store.importLocalFolder()
-                }
-                .keyboardShortcut("i", modifiers: .command)
-
-                Button("Reload") {
-                    store.load()
-                }
-                .keyboardShortcut("r", modifiers: .command)
-            }
+            LibraryCommands(store: store)
         }
 
         WindowGroup("Skill Reader", id: "reader", for: SkillReaderRequest.self) { $request in
@@ -51,6 +32,31 @@ struct MySkillsApp: App {
 
         Settings {
             SettingsView(store: store)
+        }
+    }
+}
+
+extension FocusedValues {
+    /// Presents the folder importer of the focused main window.
+    @Entry var isImportingFolder: Binding<Bool>?
+}
+
+struct LibraryCommands: Commands {
+    var store: AppStore
+    @FocusedBinding(\.isImportingFolder) private var isImportingFolder
+
+    var body: some Commands {
+        CommandGroup(after: .newItem) {
+            Button("Import Folder…") {
+                isImportingFolder = true
+            }
+            .keyboardShortcut("i", modifiers: .command)
+            .disabled(isImportingFolder == nil)
+
+            Button("Reload") {
+                store.load()
+            }
+            .keyboardShortcut("r", modifiers: .command)
         }
     }
 }
