@@ -8,7 +8,8 @@ APP_RESOURCES := $(APP_CONTENTS)/Resources
 APP_BINARY := $(APP_MACOS)/$(APP_NAME)
 INFO_PLIST := $(APP_CONTENTS)/Info.plist
 SOURCE_INFO_PLIST := Resources/Info.plist
-APP_ICON := Resources/AppIcon.icns
+APP_ICON := Resources/AppIcon.icon
+MIN_MACOS := 26.0
 DMG_ROOT := $(DIST_DIR)/dmg
 DMG_PATH := $(DIST_DIR)/$(APP_NAME).dmg
 BUILD_OPTIONS :=
@@ -24,7 +25,11 @@ bundle: build
 	cp "$$(swift build $(BUILD_OPTIONS) --show-bin-path)/$(APP_NAME)" "$(APP_BINARY)"
 	chmod +x "$(APP_BINARY)"
 	cp "$(SOURCE_INFO_PLIST)" "$(INFO_PLIST)"
-	cp "$(APP_ICON)" "$(APP_RESOURCES)/AppIcon.icns"
+	@# actool resolves relative paths against its daemon's working directory, so pass absolute ones.
+	xcrun actool "$(CURDIR)/$(APP_ICON)" --compile "$(CURDIR)/$(APP_RESOURCES)" \
+		--output-partial-info-plist "$(CURDIR)/$(DIST_DIR)/AppIcon.partial.plist" \
+		--app-icon AppIcon --platform macosx --target-device mac --minimum-deployment-target $(MIN_MACOS) \
+		--output-format human-readable-text --errors --warnings
 
 sign: bundle
 	codesign --force --sign - "$(APP_BUNDLE)" >/dev/null

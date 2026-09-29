@@ -33,3 +33,4 @@ MySkills is a native macOS SwiftUI app for managing agent skills.
 - `Sources/MySkillsApp/SettingsView.swift`: folder open preferences.
 - `Sources/MySkillsApp/SharedViews.swift`: shared small views.
 - `Resources/Info.plist`: app bundle metadata copied by `make sign`.
+- `Resources/AppIcon.icon`: Icon Composer app icon, compiled by `actool` during `make sign`.

@@ -4,7 +4,7 @@ MySkills is a native macOS app for managing agent skills across agents and proje
 
 ## Install
 
-The prebuilt app requires macOS 14 or later and an Apple Silicon Mac.
+The prebuilt app requires macOS 26 or later and an Apple Silicon Mac.
 
 Download [MySkills.dmg](../../releases/latest). The app is not notarized, so remove the quarantine attribute before the first launch:
 
