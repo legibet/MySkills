@@ -129,7 +129,7 @@ enum SkillsSearchClient {
         var components = URLComponents(string: "https://skills.sh/api/search")!
         components.queryItems = [
             URLQueryItem(name: "q", value: query),
-            URLQueryItem(name: "limit", value: "20")
+            URLQueryItem(name: "limit", value: "100")
         ]
 
         guard let url = components.url else {
@@ -142,7 +142,7 @@ enum SkillsSearchClient {
         }
 
         let envelope = try JSONDecoder().decode(SearchEnvelope.self, from: data)
-        return envelope.skills.sorted { $0.installs > $1.installs }
+        return envelope.skills
     }
 
     static func download(source: String, skillID: String) async throws -> DownloadResponse {
